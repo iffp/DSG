@@ -68,7 +68,6 @@ int main(int argc, char **argv) {
     string dataset = "deep";
     int data_size = 100000;
     string dataset_path = "";
-    string method = "";
     string query_path = "";
     string groundtruth_path = "";
     int query_num = 1000;
@@ -78,7 +77,6 @@ int main(int argc, char **argv) {
     unsigned ef_construction = 100;
     
     string index_path;
-    string version = "Benchmark";
 
     for (int i = 0; i < argc; i++) {
         string arg = argv[i];
@@ -91,8 +89,6 @@ int main(int argc, char **argv) {
             query_path = string(argv[i + 1]);
         if (arg == "-groundtruth_path")
             groundtruth_path = string(argv[i + 1]);
-        if (arg == "-method")
-            method = string(argv[i + 1]);
         if (arg == "-index_path")
             index_path = string(argv[i + 1]);
         if (arg == "-k")
@@ -133,21 +129,14 @@ int main(int argc, char **argv) {
     cout << "search ef:" << endl;
     print_set(searchef_para_range_list);
 
-    data_wrapper.version = version;
-
     base_hnsw::L2Space ss(data_wrapper.data_dim);
 
     timeval t1, t2;
 
-    BaseIndex::IndexParams i_params(index_k, ef_construction,
-                                    ef_construction, ef_max);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
     Compact::IndexCompactGraph* index;
-    // if(method == "Seg2D"){
-    //     index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);
-    // }else{
-        index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
-    // }
-    BaseIndex::SearchInfo search_info(&data_wrapper, &i_params, "SeRF_2D",
+    index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
+    BaseIndex::SearchInfo search_info(&data_wrapper, &i_params, "DSG",
                                       "benchmark");
 
     gettimeofday(&t1, NULL);
@@ -175,20 +164,13 @@ int main(int argc, char **argv) {
 #ifdef SAVESEARCHPATH
                 Compact::IndexCompactGraph::log_query_path_nns.write(reinterpret_cast<const char*>(&s_params.query_range), sizeof(s_params.query_range));
 #endif
-                if(method == "Seg2D"){
-                    auto res = index->rangeFilteringSearchOutBound(
-                    &s_params, &search_info, data_wrapper.querys.at(one_id),
-                    data_wrapper.query_ranges.at(idx));
+
+                auto res = index->rangeFilteringSearchInRange(
+                &s_params, &search_info, data_wrapper.querys.at(one_id),
+                data_wrapper.query_ranges.at(idx));
                 search_info.precision =
                     countPrecision(data_wrapper.groundtruth.at(idx), res);
-                }else{
-                    auto res = index->rangeFilteringSearchInRange(
-                    &s_params, &search_info, data_wrapper.querys.at(one_id),
-                    data_wrapper.query_ranges.at(idx));
-                search_info.precision =
-                    countPrecision(data_wrapper.groundtruth.at(idx), res);
-                }
-                
+                    
                 std::get<0>(result_recorder[s_params.query_range]) += search_info.precision;
                 std::get<1>(result_recorder[s_params.query_range]) += search_info.cal_dist_time;
                 std::get<2>(result_recorder[s_params.query_range]) += search_info.internal_search_time;

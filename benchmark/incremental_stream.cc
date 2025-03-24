@@ -191,7 +191,7 @@ int main(int argc, char **argv) {
     DataWrapper data_wrapper(query_num, query_k, dataset, data_size);
     data_wrapper.readData(dataset_path, query_path);
 
-    int st = 32;     // starting value
+    int st = 16;     // starting value
     int ed = 64;    // ending value (inclusive)
     int stride = 4; // stride value
 
@@ -203,16 +203,18 @@ int main(int argc, char **argv) {
     for (int i = st; i <= ed; i += stride) {
         searchef_para_range_list.push_back(i);
     }
+    for (int i = ed + stride; i <= 128; i += 16) {
+        searchef_para_range_list.push_back(i);
+    }
+
     cout << "search ef:" << endl;
     print_set(searchef_para_range_list);
     cout << "index K:" << index_k << " ef construction: " << ef_construction << " ef_max: " << ef_max << endl;
 
-    data_wrapper.version = version;
     base_hnsw::L2Space ss(data_wrapper.data_dim);
     timeval t1, t2;
 
-    BaseIndex::IndexParams i_params(index_k, ef_construction,
-                                    ef_construction, ef_max);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
 
     Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
 

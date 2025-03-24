@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Define root directory, N, dataset, and method as variables
-Ns=($(seq 300000 100000 900000))
+# Ns=($(seq 300000 100000 900000))
+Ns=(10000)
 data_root_path="/research/projects/zp128/RangeIndexWithRandomInsertion/data/"
-gt_root_path="/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/ordered_stream/"
+gt_root_path="/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/"
 
 # List of datasets
 DATASETS=("wiki-image" "yt8m-video" "deep") #
@@ -22,7 +23,8 @@ QUERY_PATHS=(
 ) #    
 
 # Iterate over datasets
-for i in $(seq 0 $((${#DATASETS[@]} - 1))); do
+# Attention: the last dataset may not be not included in the loop
+for i in $(seq 0 $((${#DATASETS[@]} - 2))); do
     dataset="${DATASETS[$i]}"
     dataset_path="${DATASET_PATHS[$i]}"
     query_path="${QUERY_PATHS[$i]}"

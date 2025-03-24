@@ -1,10 +1,8 @@
 /**
- * @file exp_halfbound.cc
- * @author Chaoji Zuo (chaoji.zuo@rutgers.edu)
- * @brief Benchmark Half-Bounded Range Filter Search
- * @date 2023-12-22
+ * @author Zhencan Peng
+ * @date 2025-03-17
  *
- * @copyright Copyright (c) 2023
+ * @copyright Copyright (c) 2025
  */
 
 #include <algorithm>
@@ -53,12 +51,11 @@ int main(int argc, char **argv) {
     unsigned ef_construction = 100;
     int query_num = 1000;
     int query_k = 10;
-    
+    float alpha = 1.0;
 
     string indexk_str = "";
     string ef_con_str = "";
-    string version = "Benchmark";
-    string index_dir_path;
+    string index_path;
 
     for (int i = 0; i < argc; i++) {
         string arg = argv[i];
@@ -68,7 +65,7 @@ int main(int argc, char **argv) {
         if (arg == "-dataset_path")
             dataset_path = string(argv[i + 1]);
         if (arg == "-index_path")
-            index_dir_path = string(argv[i + 1]);
+            index_path = string(argv[i + 1]);
         if (arg == "-method")
             method = string(argv[i + 1]);
         if (arg == "-k")
@@ -77,7 +74,8 @@ int main(int argc, char **argv) {
             ef_max = atoi(argv[i + 1]);
         if (arg == "-ef_construction")
             ef_construction = atoi(argv[i + 1]);
-
+        if (arg == "-alpha")
+            alpha = atof(argv[i + 1]);
     }
 
     DataWrapper data_wrapper(query_num, query_k, dataset, data_size);
@@ -85,13 +83,11 @@ int main(int argc, char **argv) {
 
     cout << "index K:" << index_k<< " ef construction: "<<ef_construction<<" ef_max: "<< ef_max<< endl;
 
-    data_wrapper.version = version;
     base_hnsw::L2Space ss(data_wrapper.data_dim);
     timeval t1, t2;
     BaseIndex* index;
 
-    BaseIndex::IndexParams i_params(index_k, ef_construction,
-                                    ef_construction, ef_max);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
     i_params.recursion_type = BaseIndex::IndexParams::MAX_POS;
     {
         
@@ -109,9 +105,7 @@ int main(int argc, char **argv) {
         gettimeofday(&t2, NULL);
         logTime(t1, t2, "Build Index Time");
         
-
-        string save_path = index_dir_path + "/" + method+ "_" + std::to_string(index_k) + "_" + std::to_string(ef_max) + "_" + std::to_string(ef_construction) + ".bin";
-        index->save(save_path);
+        index->save(index_path);
     }
 
 

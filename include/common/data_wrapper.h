@@ -34,9 +34,6 @@ public:
     // 数据集名称（常量）
     const string dataset;
     
-    // 版本号
-    string version;
-    
     // 数据大小（常量）
     const int data_size;
     

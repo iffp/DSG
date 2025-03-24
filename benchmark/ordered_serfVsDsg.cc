@@ -222,8 +222,7 @@ int main(int argc, char **argv) {
     if (dataset == "yt8m-video") {
         alpha = 1.3;
     }
-    BaseIndex::IndexParams i_params(index_k, ef_construction,
-                                    ef_construction, ef_max, alpha);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
 
     Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
     // SeRF::IndexSegmentGraph2D *index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);

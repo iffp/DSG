@@ -145,8 +145,7 @@ int main(int argc, char **argv)
         {
             for (unsigned ef_construction : ef_construction_list)
             {
-                BaseIndex::IndexParams i_params(index_k, ef_construction,
-                                                ef_construction, ef_max);
+                BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
                 {
                     cout << endl;
                     i_params.recursion_type = BaseIndex::IndexParams::MAX_POS;

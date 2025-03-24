@@ -23,7 +23,8 @@ QUERY_PATHS=(
 ) #
 
 # Iterate over datasets and their paths using proper indexing
-for i in $(seq 1 $((${#DATASETS[@]} - 1))); do
+for i in $(seq 0 $((${#DATASETS[@]} - 1))); do
+    keep-job 72
     dataset="${DATASETS[$i]}"
     dataset_path="${DATASET_PATHS[$i]}"
     query_path="${QUERY_PATHS[$i]}"
@@ -48,7 +49,6 @@ for i in $(seq 1 $((${#DATASETS[@]} - 1))); do
     ./benchmark/incre_stream -N $N -k $index_k -ef_construction $ef_construction -ef_max $ef_max \
         -dataset $dataset -dataset_path "$dataset_path" -query_path "$query_path" >>"$LOG_PATH"
 
-    keep-job 48
     break
 done
 

@@ -59,9 +59,6 @@ public:
         /// 随机种子
         unsigned random_seed = 100;
 
-        ///  TODO: Depratched parameter
-        unsigned ef_large_for_pruning = 400;
-
         /// 最大效率因子
         unsigned ef_max = 2000;
 
@@ -74,10 +71,9 @@ public:
         float alpha = 1.0;
 
         /// 构造函数：允许用户自定义参数
-        IndexParams(unsigned K, unsigned ef_construction, unsigned ef_large_for_pruning, unsigned ef_max, float _alpha = 1.0) :
+        IndexParams(unsigned K, unsigned ef_construction, unsigned ef_max, float _alpha = 1.0) :
             K(K),
             ef_construction(ef_construction),
-            ef_large_for_pruning(ef_large_for_pruning),
             ef_max(ef_max), alpha(_alpha){};
 
         // which position to cut during the recursion
@@ -151,7 +147,6 @@ public:
             version = ver;
             method = meth;
             path_counter = 0;
-            Path(ver + "-" + data->version);
         };
 
         const DataWrapper *data_wrapper;
@@ -213,10 +208,6 @@ public:
             fetch_nns_time = 0;
             path_counter = 0;
         }
-        void Path(const string &ver) {
-            version = ver;
-            save_path = "../exp/" + version + "-" + method + "-" + data_wrapper->dataset + "-" + std::to_string(data_wrapper->data_size) + ".csv";
-        };
 
         void RecordOneQuery(BaseIndex::SearchParams *search) {
             std::ofstream file;
@@ -229,7 +220,7 @@ public:
                      << fetch_nns_time << "," << cal_dist_time << ","
                      << total_comparison << "," << std::to_string(index->recursion_type)
                      << "," << index->K << "," << index->ef_max << ","
-                     << index->ef_large_for_pruning << "," << index->ef_construction;
+                     << index->ef_construction;
                 file << "\n";
             }
             file.close();

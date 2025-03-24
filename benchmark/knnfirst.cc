@@ -162,7 +162,6 @@ int exp(string dataset, int data_size, string dataset_path, string query_path, c
     BaseIndex::IndexParams i_params;
     i_params.ef_construction = ef_construction;
     i_params.K = index_k;
-    // i_params.ef_large_for_pruning = 0;
     i_params.ef_max = 0;
     {
         // Baseline

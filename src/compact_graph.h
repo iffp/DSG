@@ -1,13 +1,3 @@
-/**
- * @file index_recursion_batch.h
- * @author Chaoji Zuo (chaoji.zuo@rutgers.edu)
- * @brief Index for arbitrary range filtering search
- * Compress N SegmentGraph
- * @date 2023-06-19; Revised 2024-01-10
- *
- * @copyright Copyright (c) 2023
- */
-
 #pragma once
 
 #include <algorithm>
@@ -34,7 +24,6 @@ namespace Compact {
 template <typename dist_t>
 struct CompressedPoint {
     // 使用初始化列表构造函数，简化赋值操作并提高效率
-    // TODO: here it should be a tuple not a pair, there should be ll, lr, rl, rr
     CompressedPoint(unsigned _external_id, unsigned _ll, unsigned _lr, unsigned _rl, unsigned _rr) :
         external_id(_external_id), ll(_ll), lr(_lr), rl(_rl), rr(_rr) {
     }
@@ -52,7 +41,6 @@ struct CompressedPoint {
 
     // 重载小于运算符 (<)，用于按照（距离） or （索引）从小到大排序
     bool operator<(const CompressedPoint &other) const {
-        // return this->dist < other.dist;
         return this->external_id < other.external_id;
     }
 };
@@ -99,12 +87,7 @@ public:
 
     unsigned max_external_id_ = 0;
     unsigned min_external_id_ = std::numeric_limits<unsigned>::max();
-
-    // log
-    size_t forward_batch_nn_amount = 0;
-    size_t backward_batch_theoratical_nn_amount = 0;
-    size_t drop_points_ = 0;
-
+    
     size_t Mcurmax;
 
     // 指向BaseIndex::IndexParams类型的常量指针，存储索引参数
@@ -409,6 +392,7 @@ public:
             return;
 
         // search second time to fill the neighbors that falls in short range and also avoid ef_max is too short
+        // If you do not want a second search, just comment the following code
         // int inL = 0;
         // int inR = max_elements_;
         // int half_srange_size = max_elements_ * 0.02;
@@ -446,7 +430,8 @@ public:
     }
 
     void gen_rev_neighbors(unsigned center_external_id) {
-        // 等下 这里是不是还得check 下正向边里有没有反向边呀。。。
+        // 只要center_external_id是新加入的点，那么它的邻居的反向邻居里就一定没有他
+        // 不需要check还有没有他
         auto &nns = compact_graph->at(center_external_id).nns;
         for (auto &point : nns) {
             auto rev_point_id = point.external_id;
@@ -857,8 +842,6 @@ public:
         gettimeofday(&tt2, NULL);
         index_info->index_time = CountTime(tt1, tt2);
 
-        cout << "All the forward batch nn #: " << hnsw->forward_batch_nn_amount << endl;
-        cout << "Theoratical backward batch nn #: " << hnsw->backward_batch_theoratical_nn_amount << endl;
         // count neighbors number
         countNeighbrs();
     };
