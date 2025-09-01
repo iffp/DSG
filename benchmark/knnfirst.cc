@@ -137,7 +137,7 @@ int exp(string dataset, int data_size, string dataset_path, string query_path, c
     for (int i = 1; i <= 100; i += 10) {
         searchef_para_range_list.push_back(i);
     }
-    for (int i = 100; i <= 400; i += 100) {
+    for (int i = 100; i <= 1600; i += 100) {
         searchef_para_range_list.push_back(i);
     }
 
@@ -156,8 +156,6 @@ int exp(string dataset, int data_size, string dataset_path, string query_path, c
     base_hnsw::L2Space ss(data_wrapper.data_dim);
 
     timeval t1, t2, t3, t4;
-
-    data_wrapper.version = version;
 
     BaseIndex::IndexParams i_params;
     i_params.ef_construction = ef_construction;

@@ -178,9 +178,9 @@ int main(int argc, char **argv) {
 
     std::vector<int> searchef_para_range_list;
     // add small seach ef
-    // for (int i = 6; i < st; i += 1) {
-    //     searchef_para_range_list.push_back(i);
-    // }
+    for (int i = 1; i < st; i += 1) {
+        searchef_para_range_list.push_back(i);
+    }
     for (int i = st; i <= ed; i += stride) {
         searchef_para_range_list.push_back(i);
     }
@@ -188,7 +188,6 @@ int main(int argc, char **argv) {
     print_set(searchef_para_range_list);
     cout << "index K:" << index_k << " ef construction: " << ef_construction << " ef_max: " << ef_max << endl;
 
-    data_wrapper.version = version;
     timeval t1, t2;
 
     BaseIndex::IndexParams i_params;

@@ -137,6 +137,7 @@ int main(int argc, char **argv) {
     unsigned index_k = 16;
     unsigned ef_max = 500;
     unsigned ef_construction = 100;
+    float alpha = 1.0;
     int query_num = 1000;
     int query_k = 10;
 
@@ -159,6 +160,8 @@ int main(int argc, char **argv) {
             ef_max = atoi(argv[i + 1]);
         if (arg == "-ef_construction")
             ef_construction = atoi(argv[i + 1]);
+        if (arg == "-alpha")
+            alpha = atof(argv[i + 1]);
     }
 
     string root_path = "/research/projects/zp128/RangeIndexWithRandomInsertion";
@@ -214,16 +217,17 @@ int main(int argc, char **argv) {
     base_hnsw::L2Space ss(data_wrapper.data_dim);
     timeval t1, t2;
 
-    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
 
     Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
 
     cout << " parameters: ef_construction ( " + to_string(i_params.ef_construction) + " )  index-k( "
-         << i_params.K << ")  ef_max (" << i_params.ef_max << ") "
+         << i_params.K << ")  ef_max (" << i_params.ef_max << ") " << "alpha (" << i_params.alpha << ") "
          << endl;
     index->initForScabilityExp(&i_params, &ss);
 
-    for (int i = 0; i < insert_batches.size(); i++) {
+    // for (int i = 0; i < insert_batches.size(); i++) {
+    for (int i = 0; i < 1; i++) {
         auto &insert_batch = insert_batches[i];
         auto &gt_path = gt_paths[i];
         {   

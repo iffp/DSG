@@ -45,10 +45,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
    message(STATUS "Debug Mode")
+   message(STATUS "DEBUG mode is enabled")
 else()
    # 如果不是 Debug 模式，默认设置优化标志
    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -msse4.2 -DUSE_SSE -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -msse4.2 -DUSE_SSE -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
+    # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
 endif()
 
 

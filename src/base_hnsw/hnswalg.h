@@ -2089,12 +2089,12 @@ namespace base_hnsw
             if (has_deletions_)
             {
                 top_candidates =
-                    searchBaseLayerST<true, true>(currObj, query_data, std::max(ef_, k));
+                    searchBaseLayerST<true, true>(currObj, query_data, ef_); // max(ef_, k), this will make me hard to tune the qps
             }
             else
             {
                 top_candidates =
-                    searchBaseLayerST<false, true>(currObj, query_data, std::max(ef_, k));
+                    searchBaseLayerST<false, true>(currObj, query_data, ef_); // max(ef_, k)
             }
 
             // 调整候选队列大小以满足k值要求

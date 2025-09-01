@@ -1,5 +1,7 @@
 #pragma once
 
+#define PATH_REPORT
+
 #include <algorithm>
 #include <boost/functional/hash.hpp>
 #include <ctime>
@@ -393,13 +395,13 @@ public:
 
         // search second time to fill the neighbors that falls in short range and also avoid ef_max is too short
         // If you do not want a second search, just comment the following code
-        // int inL = 0;
-        // int inR = max_elements_;
-        // int half_srange_size = max_elements_ * 0.02;
-        // inL = std::max(inL, (int)center_external_id - half_srange_size); 
-        // inR = std::min(inR, (int)center_external_id + half_srange_size);
-        // auto inner_range = make_pair((unsigned)inL, (unsigned)inR);
-        // innerSearchInRange(data_point, center_external_id, inner_range);
+        int inL = 0;
+        int inR = max_elements_;
+        int half_srange_size = max_elements_ * 0.02;
+        inL = std::max(inL, (int)center_external_id - half_srange_size); 
+        inR = std::min(inR, (int)center_external_id + half_srange_size);
+        auto inner_range = make_pair((unsigned)inL, (unsigned)inR);
+        innerSearchInRange(data_point, center_external_id, inner_range);
 
         // some initiliazation for some variables serving for dfs function
         vector<unsigned> prefix_idx;
@@ -440,7 +442,7 @@ public:
         }
         return;
     }
-
+    
     vector<unsigned> fetched_nns;
     void innerSearchInRange(const void *data_point,
                             unsigned center_external_id,
@@ -540,12 +542,13 @@ public:
         }
 
         // push the results in top_candidates into a small heap
-        auto small_range_filter = max_elements_ * 0.002;
+        // TODO: Because we are running scalibility test, we do not need to those in small range
+        // auto small_range_filter = max_elements_ * 0.002;
         std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
         while (!top_candidates.empty()) {
             // if it is closer, highly likely that it has been in sorted_cands.
             // We do not need the points inside small_range_filter
-            if (std::abs((int)top_candidates.top().second - (int)center_external_id) > small_range_filter)
+            // if (std::abs((int)top_candidates.top().second - (int)center_external_id) > small_range_filter)
                 sorted_cands.emplace_back(top_candidates.top().second, top_candidates.top().first);
             top_candidates.pop();
         }
@@ -771,6 +774,7 @@ public:
      */
     void countNeighbrs() {
         size_t max_nns_len = 0;
+        
         // 如果有向图索引不为空，则开始处理
         if (!directed_indexed_arr.empty()) {
             // 遍历所有节点的前向邻居列表
@@ -934,7 +938,7 @@ public:
         std::priority_queue<pair<float, int>> candidate_set;   // 候选集优先队列
 
         // search_info->reset();
-        // num_search_comparison = 0;
+        num_search_comparison = 0;
 
         {
             int lbound = query_bound.first;
@@ -966,7 +970,9 @@ public:
         }
         gettimeofday(&tt3, NULL);
 
-        // size_t hop_counter = 0;
+        
+        size_t hop_counter = 0;
+
         auto ef = search_params->search_ef;
         auto M = index_params_->K;
         auto query_k = search_params->query_K;
@@ -980,8 +986,9 @@ public:
                 break;
             }
 
-            // hop_counter++;
-
+#ifdef PATH_REPORT
+            hop_counter++;
+#endif
             candidate_set.pop();
 
             // gettimeofday(&tt1, NULL);
@@ -1026,7 +1033,7 @@ public:
             }
             // gettimeofday(&tt2, NULL);                              // 结束时间记录
             // AccumulateTime(tt1, tt2, search_info->fetch_nns_time); // 累加邻居检索时间
-
+            
             // now iterate fetched nn and calculate distance
             for (auto &candidate_id : fetched_nns) {
                 visited_array[candidate_id] = visited_array_tag; // 标记为已访问
@@ -1036,7 +1043,9 @@ public:
                                           data_wrapper->nodes[candidate_id].data(),
                                           dist_func_param_);
 
-                // num_search_comparison++; // 更新比较次数
+#ifdef PATH_REPORT
+                num_search_comparison++; // 更新比较次数
+#endif
                 if (top_candidates.size() < ef) {
                     candidate_set.emplace(-dist, candidate_id); // 推入候选集
                     top_candidates.emplace(dist, candidate_id); // 推入顶级候选集
@@ -1084,8 +1093,10 @@ public:
             res.emplace_back(top_candidates.top().second); // 提取节点ID构建结果
             top_candidates.pop();
         }
-        // search_info->total_comparison += num_search_comparison; // 更新总比较次数
-        // search_info->path_counter += hop_counter;
+#ifdef PATH_REPORT
+        search_info->total_comparison = num_search_comparison; // 更新总比较次数
+        search_info->path_counter = hop_counter;
+#endif
         // search_info->pos_point_traverse_counter = pos_point_traverse_counter;
         // search_info->pos_point_used_counter = pos_point_used_counter;
         // search_info->neg_point_traverse_counter = neg_point_traverse_counter;

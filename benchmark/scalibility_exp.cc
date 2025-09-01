@@ -55,13 +55,13 @@ void log_result_recorder(
     }
 }
 
+// We do not shuffle here
 std::vector<std::vector<unsigned>> generatePermutations(const std::vector<unsigned> &batch_sizes) {
     std::vector<std::vector<unsigned>> permutations;
     unsigned start = 0; // Starting point for the first batch
     if (batch_sizes.size() > 1)
         assert(batch_sizes[0] < batch_sizes[1]);
     // Seed the random number generator with current time
-    std::default_random_engine rng(std::chrono::system_clock::now().time_since_epoch().count());
 
     for (unsigned size : batch_sizes) {
         std::vector<unsigned> batch;
@@ -70,11 +70,6 @@ std::vector<std::vector<unsigned>> generatePermutations(const std::vector<unsign
         for (unsigned i = start; i < size; ++i) {
             batch.push_back(i);
         }
-
-        // Shuffle to create a random permutation
-        // Only for aribitrary order 
-        // Attention here!!! TODO
-        // std::shuffle(batch.begin(), batch.end(), rng);
 
         // Store the permutation and update the starting point for the next batch
         permutations.push_back(batch);
@@ -101,16 +96,14 @@ int main(int argc, char **argv) {
 
     // Parameters
     string dataset = "wiki-image";
-    // vector<unsigned> batches_size = {1000, 10000, 100000, 1000000, 10000000};
-    vector<unsigned> batches_size = { 1150000, 1200000}; // 1000000, 1050000, 1100000,
+    vector<unsigned> batches_size = {1000, 10000, 100000, 1000000, 10000000};
 
-    // int data_size = 10000000;
-    int data_size = 1200000;
+    int data_size = 10000000;
     auto insert_batches = generatePermutations(batches_size);
     string dataset_path = "";
     string query_path = "";
-    string index_path = "";
 
+    float alpha = 1.0;
     unsigned index_k = 16;
     unsigned ef_max = 500;
     unsigned ef_construction = 100;
@@ -119,20 +112,13 @@ int main(int argc, char **argv) {
 
     string indexk_str = "";
     string ef_con_str = "";
-    string version = "Benchmark";
-    vector<string> gt_paths = {
-        // "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1m-num1000-k10.arbitrary.cvs",
-        // "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1050k-num1000-k10.arbitrary.cvs",
-        // "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1100k-num1000-k10.arbitrary.cvs",
-        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1150k-num1000-k10.arbitrary.cvs",
-        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1200k-num1000-k10.arbitrary.cvs"};
 
-    // vector<string> gt_paths = {
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/deep_benchmark-groundtruth-deep-1k-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/deep_benchmark-groundtruth-deep-10k-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/deep_benchmark-groundtruth-deep-100k-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/deep_benchmark-groundtruth-deep-1m-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/deep_benchmark-groundtruth-deep-10m-num1000-k10.arbitrary.cvs"};
+    vector<string> gt_paths = {
+        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1k-num1000-k10.arbitrary.cvs",
+        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-10k-num1000-k10.arbitrary.cvs",
+        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-100k-num1000-k10.arbitrary.cvs",
+        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-1m-num1000-k10.arbitrary.cvs",
+        "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/wiki-image_benchmark-groundtruth-deep-10m-num1000-k10.arbitrary.cvs"};
     
     for (int i = 0; i < argc; i++) {
         string arg = argv[i];
@@ -142,14 +128,14 @@ int main(int argc, char **argv) {
             dataset_path = string(argv[i + 1]);
         if (arg == "-query_path")
             query_path = string(argv[i + 1]);
-        if (arg == "-index_path")
-            index_path = string(argv[i + 1]);
         if (arg == "-k")
             index_k = atoi(argv[i + 1]);
         if (arg == "-ef_max")
             ef_max = atoi(argv[i + 1]);
         if (arg == "-ef_construction")
             ef_construction = atoi(argv[i + 1]);
+        if (arg == "-alpha")
+            alpha = atof(argv[i + 1]);
     }
 
     if (dataset != "wiki-image") {
@@ -160,8 +146,8 @@ int main(int argc, char **argv) {
     DataWrapper data_wrapper(query_num, query_k, dataset, data_size);
     data_wrapper.readData(dataset_path, query_path);
 
-    int st = 16;     // starting value
-    int ed = 400;    // ending value (inclusive)
+    int st = 32;     // starting value
+    int ed = 200;    // ending value (inclusive)
     int stride = 32; // stride value
     std::vector<int> searchef_para_range_list;
     for (int i = st; i <= ed; i += stride) {
@@ -171,25 +157,25 @@ int main(int argc, char **argv) {
     print_set(searchef_para_range_list);
     cout << "index K:" << index_k << " ef construction: " << ef_construction << " ef_max: " << ef_max << endl;
 
-    data_wrapper.version = version;
     base_hnsw::L2Space ss(data_wrapper.data_dim);
     timeval t1, t2;
 
-    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
 
-    // Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
-    SeRF::IndexSegmentGraph2D *index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);
+    Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
+    // SeRF::IndexSegmentGraph2D *index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);
     cout << " parameters: ef_construction ( " + to_string(i_params.ef_construction) + " )  index-k( "
-         << i_params.K << ")  ef_max (" << i_params.ef_max << ") "
-         << endl;
+    << i_params.K << ")  ef_max (" << i_params.ef_max << ") " << "alpha (" << i_params.alpha << ") "
+    << endl;
     index->initForScabilityExp(&i_params, &ss);
 
     for (int i = 0; i < insert_batches.size(); i++) {
         auto &insert_batch = insert_batches[i];
         auto &gt_path = gt_paths[i];
         index->insert_batch(insert_batch);
+        index->initLabelSet();
         data_wrapper.LoadGroundtruth(gt_path);
-        BaseIndex::SearchInfo search_info(&data_wrapper, &i_params, "SeRF_2D",
+        BaseIndex::SearchInfo search_info(&data_wrapper, &i_params, "CompactGraph",
                                           "benchmark");
         {
             timeval tt3, tt4;

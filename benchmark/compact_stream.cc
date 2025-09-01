@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
     base_hnsw::L2Space ss(data_wrapper.data_dim);
     timeval t1, t2;
 
-    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
+    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
 
     Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
     // SeRF::IndexSegmentGraph2D *index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);

@@ -510,8 +510,11 @@ public:
                             data_level0_memory_ + candidate_set.top().second * size_data_per_element_ + offsetLevel0_, ///////////
                             _MM_HINT_T0);                                                                              ////////////////////////
 #endif
+
+#ifdef FILTER_TOP_CANDIDATES
                         auto acutal_id = getExternalLabel(candidate_id);
                         if (acutal_id <= rbound && acutal_id >= lbound) {
+#endif
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
                                 top_candidates.emplace(dist, candidate_id);
 
@@ -526,7 +529,9 @@ public:
                             } else {
                                 candidate_from_out_bound++;
                             }
+#ifdef FILTER_TOP_CANDIDATES                            
                         }
+#endif
                     }
                 }
             }
@@ -1524,21 +1529,25 @@ public:
             top_candidates;
         if (has_deletions_) {
             top_candidates =
-                searchBaseLayerST<true, true>(currObj, query_data, std::max(ef_, k),
+                searchBaseLayerST<true, true>(currObj, query_data, ef_,  // max(ef_, k) not good for tune the QPS
                                               fixed_ef, lbound, rbound, K_query);
         } else {
             top_candidates =
-                searchBaseLayerST<false, true>(currObj, query_data, std::max(ef_, k),
+                searchBaseLayerST<false, true>(currObj, query_data, ef_,
                                                fixed_ef, lbound, rbound, K_query);
         }
 
-        while (top_candidates.size() > k) {
-            top_candidates.pop();
-        }
+        // while (top_candidates.size() > k) {
+        //     top_candidates.pop();
+        // } 
         while (top_candidates.size() > 0) {
             std::pair<dist_t, tableint> rez = top_candidates.top();
-            result.push(std::pair<dist_t, labeltype>(rez.first,
-                                                     getExternalLabel(rez.second)));
+            auto cur_label = getExternalLabel(rez.second);
+            if (lbound<=cur_label && cur_label <= rbound) {
+                result.push(std::pair<dist_t, labeltype>(rez.first,cur_label));
+            }
+            // result.push(std::pair<dist_t, labeltype>(rez.first,
+            //                                          getExternalLabel(rez.second)));
             top_candidates.pop();
         }
         return result;

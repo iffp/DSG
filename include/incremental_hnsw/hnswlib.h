@@ -165,6 +165,11 @@ namespace hnswlib_incre
             }
         }
 
+        // make sure we only return the top k results
+        if (result.size() > k)
+        {
+            result.resize(k);
+        }
         return result;
     }
 
