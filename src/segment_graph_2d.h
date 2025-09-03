@@ -68,6 +68,7 @@ public:
      * @param index_params 索引参数配置对象，包含索引构建过程中的关键参数.
      * @param s 距离计算空间接口，用于执行距离度量操作.
      * @param max_elements 最大元素数量，即索引能容纳的最大数据点数.
+     * @param dataset_name_ 数据集名称，用于调试或策略控制.
      * @param M 默认连接度，每个节点默认与其他M个节点相连.
      * @param ef_construction 扩展因子，在构造过程中使用的查询效率参数.
      * @param random_seed 随机种子，用于初始化随机数生成器.
@@ -75,6 +76,7 @@ public:
     SegmentGraph2DHNSW(const BaseIndex::IndexParams &index_params,
                        SpaceInterface<float> *s,
                        size_t max_elements,
+                       string dataset_name_,
                        size_t M = 16,
                        size_t ef_construction = 200,
                        size_t random_seed = 100) :
@@ -84,6 +86,7 @@ public:
 
         // 设置最大扩展因子为索引参数中的ef_max值
         ef_max_ = index_params.ef_max;
+        dataset_name = dataset_name_;
     }
 
     // 指向BaseIndex::IndexParams类型的常量指针，存储索引参数
@@ -91,6 +94,7 @@ public:
 
     // 存储指向段图邻居列表的指针，表示图结构中的边信息
     vector<DirectedSegNeighbors> *segment_graph;
+    string dataset_name;
 
     /**
      * 在构建HNSW图时优化搜索过程，保留更多邻居节点信息。
@@ -694,8 +698,8 @@ public:
         // build HNSW
         L2Space space(data_wrapper->data_dim);
         hnsw = new SegmentGraph2DHNSW<float>(
-            *index_params, &space, 2 * data_wrapper->data_size, index_params->K,
-            index_params->ef_construction, index_params->random_seed);
+            *index_params, &space, 2 * data_wrapper->data_size, data_wrapper->dataset,
+            index_params->K, index_params->ef_construction, index_params->random_seed);
 
         directed_indexed_arr.clear();
         directed_indexed_arr.resize(data_wrapper->data_size);
@@ -729,8 +733,8 @@ public:
         index_params_ = index_params;
         // build HNSW
         hnsw = new SegmentGraph2DHNSW<float>(
-            *index_params, space, 2 * data_wrapper->data_size, index_params->K,
-            index_params->ef_construction, index_params->random_seed);
+            *index_params, space, 2 * data_wrapper->data_size, data_wrapper->dataset,
+            index_params->K, index_params->ef_construction, index_params->random_seed);
 
         // directed_indexed_arr.clear();
         directed_indexed_arr.resize(data_wrapper->data_size);

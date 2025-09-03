@@ -15,7 +15,7 @@
 #include "logger.h"
 #include "reader.h"
 #include "compact_graph.h"
-#include "segment_graph_2d.h"
+#include "segment_graph_2D_optimized.h"
 #include "utils.h"
 
 #ifdef __linux__
@@ -147,11 +147,6 @@ int main(int argc, char **argv) {
     string indexk_str = "";
     string ef_con_str = "";
     string version = "Benchmark";
-    // vector<string> gt_paths = {
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/ordered_stream/wiki-image_benchmark-groundtruth-deep-50k-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/ordered_stream/wiki-image_benchmark-groundtruth-deep-100k-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/ordered_stream/wiki-image_benchmark-groundtruth-deep-150k-num1000-k10.arbitrary.cvs",
-    //     "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/ordered_stream/wiki-image_benchmark-groundtruth-deep-200k-num1000-k10.arbitrary.cvs"};
 
     vector<string> gt_paths = {
         "/research/projects/zp128/RangeIndexWithRandomInsertion/groundtruth/ordered_stream/wiki-image_benchmark-groundtruth-deep-100k-num1000-k10.arbitrary.cvs",
@@ -203,13 +198,13 @@ int main(int argc, char **argv) {
     int stride = 16; // stride value
 
     std::vector<int> searchef_para_range_list;
-    // // add small seach ef
-    // for (int i = 1; i < st; i += 1) {
-    //     searchef_para_range_list.push_back(i);
-    // }
-    // for (int i = st; i <= ed; i += stride) {
-    //     searchef_para_range_list.push_back(i);
-    // }
+    // add small seach ef
+    for (int i = 1; i < st; i += 1) {
+        searchef_para_range_list.push_back(i);
+    }
+    for (int i = st; i <= ed; i += stride) {
+        searchef_para_range_list.push_back(i);
+    }
     cout << "search ef:" << endl;
     print_set(searchef_para_range_list);
     cout << "index K:" << index_k << " ef construction: " << ef_construction << " ef_max: " << ef_max << endl;
@@ -224,8 +219,8 @@ int main(int argc, char **argv) {
     }
     BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
 
-    Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
-    // SeRF::IndexSegmentGraph2D *index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);
+    // Compact::IndexCompactGraph *index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
+    SeRF::IndexSegmentGraph2D *index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);
     cout << " parameters: ef_construction ( " + to_string(i_params.ef_construction) + " )  index-k( "
          << i_params.K << ")  ef_max (" << i_params.ef_max << ") "
          << endl;
@@ -240,7 +235,7 @@ int main(int argc, char **argv) {
             index->insert_batch(insert_batch);
             index->save(index_paths[i]);
         }
-        index->initLabelSet();
+        // index->initLabelSet();
         data_wrapper.LoadGroundtruth(gt_path);
         BaseIndex::SearchInfo search_info(&data_wrapper, &i_params, "SeRF_2D",
                                           "benchmark");
