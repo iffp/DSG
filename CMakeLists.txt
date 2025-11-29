@@ -66,3 +66,7 @@ endif()
 
 add_subdirectory(src/common)
 add_subdirectory(benchmark)
+
+# Test executables
+add_executable(test_l2_benchmark test/test_l2_benchmark.cpp)
+add_executable(test_range_benchmark test/test_range_benchmark.cpp)

@@ -8,7 +8,6 @@ __pycache__
 *.zip
 .DS_Store
 *.bin
-test
 *.log
 *.json
 *.pkl

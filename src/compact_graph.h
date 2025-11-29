@@ -865,6 +865,14 @@ public:
         hnsw->compact_graph = &directed_indexed_arr;
     }
 
+    // Generate compressed neighbors for all currently inserted labels
+    void generateNeighborsAll() {
+        for (size_t i = 0; i < data_wrapper->data_size; i++) {
+            auto cur_c = hnsw->getInnerIdByLabel((int)i);
+            hnsw->gen_tmp_nn_list(data_wrapper->nodes.at(i).data(), cur_c);
+        }
+    }
+
     std::set<int> label_set;
     void initLabelSet() {
         for (int i = 0; i < directed_indexed_arr.size(); i++) {
