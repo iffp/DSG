@@ -1,72 +1,24 @@
-cmake_minimum_required(VERSION 3.12)
-project(RangeFiltering-ANNS)
-
-# 设置编译器
-# set(CMAKE_C_COMPILER /opt/homebrew/opt/gcc/bin/gcc-14)
-# set(CMAKE_CXX_COMPILER /opt/homebrew/opt/gcc/bin/g++-14)
-
-find_package(OpenMP REQUIRED)
-if(OpenMP_FOUND)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-    message(STATUS "Found OpenMP")
-else()
-    message(FATAL_ERROR "Could NOT find OpenMP")
-endif()
-
-message(STATUS "CXX Flags: ${CMAKE_CXX_FLAGS}")
+cmake_minimum_required(VERSION 3.16)
+project(RangeFilteringTests LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-message(${CMAKE_SYSTEM})
-
-find_package(Boost REQUIRED COMPONENTS timer chrono system program_options)
-message(STATUS ${Boost_LIBRARIES})
-if(Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-    SET (LD_LIBRARY_PATH ${BOOST_LIBRARYDIR})
-else()
-    message(FATAL_ERROR "Could NOT find Boost")
-endif()
-
-include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_SOURCE_DIR}/include/irange_util)
-include_directories(${PROJECT_SOURCE_DIR}/include/common)
-include_directories(${PROJECT_SOURCE_DIR}/src)
-
-
-# 如果想要Release而不是Debug 就cmake .. -DCMAKE_BUILD_TYPE=Release
-if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
-   set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build." FORCE)
-endif()
-
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-   # 开启调试信息
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
-   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
-   message(STATUS "Debug Mode")
-   message(STATUS "DEBUG mode is enabled")
-else()
-   # 如果不是 Debug 模式，默认设置优化标志
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -msse4.2 -DUSE_SSE -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
-   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -msse4.2 -DUSE_SSE -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
-    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
-    # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native -lrt -DHAVE_CXX0X -fpic -w -fno-tree-vectorize")
-endif()
-
-
-set(CMAKE_TRY_COMPILE_TARGET_TYPE "STATIC_LIBRARY")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-option(NOSIMD "build hnsw on SIMD" ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-if(NOSIMD)
-    add_definitions(-DNO_MANUAL_VECTORIZATION)
-    add_definitions(-DKGRAPH_NO_VECTORIZE)
+option(ENABLE_AVX512 "Enable AVX-512 instructions for the SIMD benchmark" OFF)
+
+add_executable(test_range_benchmark
+    tests/test_range_benchmark.cpp
+)
+
+add_executable(test_range_benchmark_simd
+    tests/test_range_benchmark_simd.cpp
+)
+target_compile_options(test_range_benchmark_simd PRIVATE -mavx2 -mfma)
+if(ENABLE_AVX512)
+    target_compile_options(test_range_benchmark_simd PRIVATE -mavx512f)
 endif()
 
-add_subdirectory(src/common)
-add_subdirectory(benchmark)
-
-# Test executables
-add_executable(test_l2_benchmark test/test_l2_benchmark.cpp)
-add_executable(test_range_benchmark test/test_range_benchmark.cpp)
+add_executable(test_l2_benchmark
+    tests/test_l2_benchmark.cpp
+)

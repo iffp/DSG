@@ -59,6 +59,8 @@ int main() {
     std::vector<unsigned> left_upper(num_ranges);
     std::vector<unsigned> right_lower(num_ranges);
     std::vector<unsigned> right_upper(num_ranges);
+    std::vector<size_t> filtered_indices;
+    filtered_indices.reserve(target_candidates);
     std::vector<CompressedPoint> compressed_points;
     compressed_points.reserve(num_ranges);
 
@@ -66,7 +68,6 @@ int main() {
         return std::min(max_value, std::max(min_value, value));
     };
 
-    size_t actual_candidates = 0;
     for (size_t i = 0; i < num_ranges; ++i) {
         const bool make_candidate = candidate_mask[i] != 0;
         unsigned ll = 0;
@@ -100,7 +101,7 @@ int main() {
         compressed_points.emplace_back(static_cast<unsigned>(i), ll, lr, rl, rr);
 
         if (query_L >= ll && query_L <= lr) {
-            ++actual_candidates;
+            filtered_indices.push_back(i);
         }
     }
 
@@ -130,7 +131,7 @@ int main() {
     const unsigned *const lr_ptr = left_upper.data();
     const unsigned *const rl_ptr = right_lower.data();
     const unsigned *const rr_ptr = right_upper.data();
-
+    
     for (size_t iter = 0; iter < num_iterations; ++iter) {
         for (size_t idx = 0; idx < num_ranges; ++idx) {
             const unsigned ll = ll_ptr[idx];
@@ -153,8 +154,10 @@ int main() {
     std::cout << "SoA scan " << num_iterations << " times over " << num_ranges
               << " ranges took: " << optimized_elapsed.count() << " seconds\n";
 
-    const double actual_ratio = static_cast<double>(actual_candidates) / static_cast<double>(num_ranges);
+    const double actual_ratio = static_cast<double>(filtered_indices.size()) / static_cast<double>(num_ranges);
     std::cout << "Candidate ratio: " << actual_ratio * 100.0 << "%\n";
+    std::cout << "Filtered indices (" << filtered_indices.size() << "):";
+    std::cout << '\n';
 
     return 0;
 }

@@ -1,10 +1,10 @@
 /**
  * @file reader.h
- * @author Chaoji Zuo (chaoji.zuo@rutgers.edu)
- * @brief Read Vector data
- * @date 2023-04-21
+ * @author Zhencan Peng (zhencan.peng@rutgers.edu)
+ * @brief Read vector data
+ * @date 2025-11-21
  *
- * @copyright Copyright (c) 2023
+ * @copyright Copyright (c) 2025
  *
  */
 #pragma once
