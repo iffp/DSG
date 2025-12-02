@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
         data_wrapper.readData(dataset_path, query_path);
         data_wrapper.LoadGroundtruth(cfg.groundtruth_root);
 
-        base_hnsw::L2Space space(data_wrapper.data_dim);
+        hnswlib::L2Space space(data_wrapper.data_dim);
         dsg::DynamicSegmentGraph index(&space, &data_wrapper);
         index.setQueryTopK(static_cast<unsigned>(cfg.query_k));
         index.setSearchEf(cfg.search_ef);

@@ -20,7 +20,7 @@
 #include "data_wrapper.h"
 #include "index_base.h"
 #include "utils.h"
-using namespace base_hnsw;
+using namespace hnswlib;
 
 namespace Compact {
 template <typename dist_t>
@@ -739,14 +739,14 @@ public:
 class IndexCompactGraph : public BaseIndex {
 public:
     vector<DirectedPointNeighbors<float>> directed_indexed_arr;
-    base_hnsw::DISTFUNC<float> fstdistfunc_;
+    hnswlib::DISTFUNC<float> fstdistfunc_;
     void *dist_func_param_;
     VisitedListPool *visited_list_pool_ = nullptr;
     IndexInfo *index_info = nullptr;
     const BaseIndex::IndexParams *index_params_;
     CompactHNSW<float> *hnsw;
     vector<unsigned> fetched_nns;
-    IndexCompactGraph(base_hnsw::SpaceInterface<float> *s,
+    IndexCompactGraph(hnswlib::SpaceInterface<float> *s,
                       const DataWrapper *data) :
         BaseIndex(data) {
         fstdistfunc_ = s->get_dist_func();
@@ -800,7 +800,7 @@ public:
         cout << "Building Index using " << index_info->index_version_type << endl;
         timeval tt1, tt2;
         visited_list_pool_ =
-            new base_hnsw::VisitedListPool(1, data_wrapper->data_size);
+            new hnswlib::VisitedListPool(1, data_wrapper->data_size);
 
         index_params_ = index_params;
         // build HNSW
@@ -853,7 +853,7 @@ public:
     void initForScabilityExp(const IndexParams *index_params, L2Space *space) {
         if (visited_list_pool_ == nullptr)
             visited_list_pool_ =
-                new base_hnsw::VisitedListPool(1, data_wrapper->data_size);
+                new hnswlib::VisitedListPool(1, data_wrapper->data_size);
         index_params_ = index_params;
         // build HNSW
         hnsw = new CompactHNSW<float>(
@@ -1155,7 +1155,7 @@ public:
         if (!in) {
             throw std::runtime_error("Failed to open file for loading index.");
         }
-        visited_list_pool_ = new base_hnsw::VisitedListPool(1, data_wrapper->data_size);
+        visited_list_pool_ = new hnswlib::VisitedListPool(1, data_wrapper->data_size);
         // Load directed_indexed_arr
         size_t arr_size;
         in.read((char *)&arr_size, sizeof(arr_size));

@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
         std::string query_path = cfg.query_path;
         data_wrapper.readData(dataset_path, query_path);
 
-        base_hnsw::L2Space space(data_wrapper.data_dim);
+        hnswlib::L2Space space(data_wrapper.data_dim);
         dsg::DynamicSegmentGraph index(&space, &data_wrapper);
         index.M = cfg.index_k;
         index.ef_construction = cfg.ef_construction;

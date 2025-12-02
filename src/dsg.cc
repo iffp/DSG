@@ -26,7 +26,7 @@ inline unsigned clampUnsigned(unsigned value, unsigned lo, unsigned hi) {
 }
 } // namespace
 
-DynamicSegmentGraph::DynamicSegmentGraph(base_hnsw::SpaceInterface<DistType> *space,
+DynamicSegmentGraph::DynamicSegmentGraph(hnswlib::SpaceInterface<DistType> *space,
                                          const DataWrapper *data) :
     BaseIndex(data),
     space_(space) {
@@ -55,13 +55,17 @@ void DynamicSegmentGraph::build() {
 
     forward_edges_.assign(static_cast<std::size_t>(data_wrapper->data_size), {});
 
-    // build temporary HNSW
+    // build temporary HNSW and time it
+    auto hnsw_build_start = Clock::now();
     initializeTemporaryHnsw(ef_max);
     for (int label = 0; label < data_wrapper->data_size; ++label) {
         temp_hnsw_->addPoint(static_cast<const void *>(data_wrapper->nodes.at(label)),
-                             static_cast<base_hnsw::labeltype>(label));
+                             static_cast<hnswlib::labeltype>(label));
     }
     temp_hnsw_->setEf(ef_max);
+    auto hnsw_build_end = Clock::now();
+    double hnsw_build_time = std::chrono::duration<double>(hnsw_build_end - hnsw_build_start).count();
+    std::cout << "[DSG] Temporary HNSW built in " << hnsw_build_time << " seconds." << std::endl;
 
     // run KNN for each label
     std::vector<std::pair<unsigned, DistType>> candidates;

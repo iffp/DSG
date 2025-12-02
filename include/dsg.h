@@ -27,7 +27,7 @@
 
 namespace dsg {
 
-using base_hnsw::tableint;
+using hnswlib::tableint;
 
 /**
  * @brief A compressed forward edge that captures the valid segment ranges.
@@ -92,12 +92,12 @@ struct DfsScratch {
 class DynamicSegmentGraph : public BaseIndex {
 public:
     using DistType = float;
-    using HnswType = base_hnsw::HierarchicalNSW<DistType>;
+    using HnswType = hnswlib::HierarchicalNSW<DistType>;
 
     /**
      * @brief Construct an empty DSG with the given data wrapper and L2 space.
      */
-    DynamicSegmentGraph(base_hnsw::SpaceInterface<DistType> *space,
+    DynamicSegmentGraph(hnswlib::SpaceInterface<DistType> *space,
                         const DataWrapper *data);
     /**
      * @brief Release the temporary HNSW and any scratch buffers.
@@ -139,11 +139,11 @@ private:
 
 private:
     /// Distance space used to construct the temporary HNSW.
-    base_hnsw::SpaceInterface<DistType> *space_ = nullptr;
+    hnswlib::SpaceInterface<DistType> *space_ = nullptr;
     /// Temporary HNSW instance used only during build.
     std::unique_ptr<HnswType> temp_hnsw_;
     /// Distance function supplied by the space.
-    base_hnsw::DISTFUNC<DistType> dist_func_ = nullptr;
+    hnswlib::DISTFUNC<DistType> dist_func_ = nullptr;
     /// Parameter blob forwarded to the distance function.
     void *dist_func_param_ = nullptr;
     /// Compressed forward edges for every label.

@@ -23,7 +23,7 @@
 #include "index_base.h"
 #include "utils.h"
 
-using namespace base_hnsw;
+using namespace hnswlib;
 
 namespace SeRF {
 
@@ -554,7 +554,7 @@ class IndexSegmentGraph2D : public BaseIndex {
 public:
     vector<DirectedSegNeighbors> directed_indexed_arr;
 
-    IndexSegmentGraph2D(base_hnsw::SpaceInterface<float> *s,
+    IndexSegmentGraph2D(hnswlib::SpaceInterface<float> *s,
                         const DataWrapper *data) :
         BaseIndex(data) {
         fstdistfunc_ = s->get_dist_func();
@@ -562,7 +562,7 @@ public:
         index_info = new IndexInfo();
         index_info->index_version_type = "IndexSegmentGraph2D";
     }
-    base_hnsw::DISTFUNC<float> fstdistfunc_;
+    hnswlib::DISTFUNC<float> fstdistfunc_;
     void *dist_func_param_;
 
     VisitedListPool *visited_list_pool_ = nullptr;
@@ -690,7 +690,7 @@ public:
         cout << "Building Index using " << index_info->index_version_type << endl;
         timeval tt1, tt2;
         visited_list_pool_ =
-            new base_hnsw::VisitedListPool(1, data_wrapper->data_size);
+            new hnswlib::VisitedListPool(1, data_wrapper->data_size);
 
         index_params_ = index_params;
         index_k = index_params->K;
@@ -729,7 +729,7 @@ public:
     void initForScabilityExp(const IndexParams *index_params, L2Space *space) {
         if(visited_list_pool_ == nullptr)
             visited_list_pool_ =
-                new base_hnsw::VisitedListPool(1, data_wrapper->data_size);
+                new hnswlib::VisitedListPool(1, data_wrapper->data_size);
         index_params_ = index_params;
         // build HNSW
         hnsw = new SegmentGraph2DHNSW<float>(
@@ -1108,25 +1108,25 @@ public:
     void save(const string &file_path) override {
         std::ofstream output(file_path, std::ios::binary);
         unsigned counter = 0;
-        base_hnsw::writeBinaryPOD(output, index_k);
+        hnswlib::writeBinaryPOD(output, index_k);
         for (auto &segment : directed_indexed_arr) {
-            base_hnsw::writeBinaryPOD(output, (int)segment.forward_nns.size());
-            base_hnsw::writeBinaryPOD(output, (int)segment.reverse_nns.size());
+            hnswlib::writeBinaryPOD(output, (int)segment.forward_nns.size());
+            hnswlib::writeBinaryPOD(output, (int)segment.reverse_nns.size());
 
             counter += 2;
             for (auto &nn : segment.forward_nns) {
-                base_hnsw::writeBinaryPOD(output, nn.batch);
-                base_hnsw::writeBinaryPOD(output, nn.start);
-                base_hnsw::writeBinaryPOD(output, nn.end);
-                base_hnsw::writeBinaryPOD(output, (int)nn.nns_id.size());
+                hnswlib::writeBinaryPOD(output, nn.batch);
+                hnswlib::writeBinaryPOD(output, nn.start);
+                hnswlib::writeBinaryPOD(output, nn.end);
+                hnswlib::writeBinaryPOD(output, (int)nn.nns_id.size());
                 for (auto &nn_id : nn.nns_id) {
-                    base_hnsw::writeBinaryPOD(output, nn_id);
+                    hnswlib::writeBinaryPOD(output, nn_id);
                     counter += 1;
                 }
                 counter += 4;
             }
             for (auto &nn_id : segment.reverse_nns) {
-                base_hnsw::writeBinaryPOD(output, nn_id);
+                hnswlib::writeBinaryPOD(output, nn_id);
                 counter += 1;
             }
         }
@@ -1138,9 +1138,9 @@ public:
         if (!input.is_open()) throw std::runtime_error("Cannot open file");
         directed_indexed_arr.clear();
         directed_indexed_arr.resize(data_wrapper->data_size);
-        base_hnsw::readBinaryPOD(input, index_k);
+        hnswlib::readBinaryPOD(input, index_k);
         cout << "Index K is " << index_k << endl;
-        visited_list_pool_ = new base_hnsw::VisitedListPool(1, data_wrapper->data_size);
+        visited_list_pool_ = new hnswlib::VisitedListPool(1, data_wrapper->data_size);
         int forward_num;
         int reverse_num;
         int batch_num;
@@ -1149,18 +1149,18 @@ public:
         int nn_size;
         int one_nn;
         for (size_t i = 0; i < data_wrapper->data_size; i++) {
-            base_hnsw::readBinaryPOD(input, forward_num);
-            base_hnsw::readBinaryPOD(input, reverse_num);
+            hnswlib::readBinaryPOD(input, forward_num);
+            hnswlib::readBinaryPOD(input, reverse_num);
 
             vector<OneSegmentNeighbors> neighbors;
             for (size_t j = 0; j < forward_num; j++) {
-                base_hnsw::readBinaryPOD(input, batch_num);
-                base_hnsw::readBinaryPOD(input, start_pos);
-                base_hnsw::readBinaryPOD(input, end_pos);
-                base_hnsw::readBinaryPOD(input, nn_size);
+                hnswlib::readBinaryPOD(input, batch_num);
+                hnswlib::readBinaryPOD(input, start_pos);
+                hnswlib::readBinaryPOD(input, end_pos);
+                hnswlib::readBinaryPOD(input, nn_size);
                 vector<int> forward_nns;
                 for (size_t k = 0; k < nn_size; k++) {
-                    base_hnsw::readBinaryPOD(input, one_nn);
+                    hnswlib::readBinaryPOD(input, one_nn);
                     forward_nns.emplace_back(one_nn);
                 }
                 OneSegmentNeighbors one_forward_segment(batch_num, start_pos, end_pos);
@@ -1170,7 +1170,7 @@ public:
 
             vector<int> reverse_nns;
             for (size_t j = 0; j < reverse_num; j++) {
-                base_hnsw::readBinaryPOD(input, one_nn);
+                hnswlib::readBinaryPOD(input, one_nn);
                 reverse_nns.emplace_back(one_nn);
             }
             directed_indexed_arr[i].forward_nns.swap(neighbors);
