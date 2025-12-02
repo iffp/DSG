@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "base_hnsw/space_l2.h"
+#include "base_hnsw/hnswlib.h"
 #include "data_wrapper.h"
 #include "dsg.h"
 #include "utils/utils.h"
@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            double precision_acc = 0.0;
+            double recall_acc = 0.0;
             double latency_acc = 0.0;
             size_t evaluated = 0;
 
@@ -150,7 +150,7 @@ int main(int argc, char **argv) {
 
                 const int *truth_row = range_truth[query_idx];
                 auto preds = toVector(index.returned_nns, static_cast<size_t>(cfg.query_k));
-                precision_acc += countPrecision(truth_row, static_cast<size_t>(cfg.query_k), preds);
+                recall_acc += countRecall(truth_row, static_cast<size_t>(cfg.query_k), preds);
                 ++evaluated;
             }
 
@@ -158,13 +158,13 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            const double avg_precision = precision_acc / static_cast<double>(evaluated);
+            const double avg_recall = recall_acc / static_cast<double>(evaluated);
             const double avg_latency = latency_acc / static_cast<double>(evaluated);
             const double qps = latency_acc > 0 ? static_cast<double>(evaluated) / latency_acc : 0.0;
 
             std::cout << std::fixed << std::setprecision(4);
             std::cout << "[Range ratio " << DataWrapper::kRangeRatios[range_id] * 100 << "%] "
-                      << "Precision=" << avg_precision << " "
+                      << "Recall=" << avg_recall << " "
                       << "Latency=" << avg_latency * 1e3 << " ms "
                       << "QPS=" << qps << std::endl;
         }

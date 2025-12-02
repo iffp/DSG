@@ -31,7 +31,7 @@ void logTime(timeval &begin, timeval &end, const string &log) {
             end.tv_sec - begin.tv_sec + (end.tv_usec - begin.tv_usec) * 1.0 / CLOCKS_PER_SEC);
 };
 
-double countPrecision(const vector<int> &truth, const vector<int> &pred) {
+double countRecall(const vector<int> &truth, const vector<int> &pred) {
     double num_right = 0;
     for (auto one : truth) {
         if (std::find(pred.begin(), pred.end(), one) != pred.end()) {
@@ -41,9 +41,9 @@ double countPrecision(const vector<int> &truth, const vector<int> &pred) {
     return num_right / truth.size();
 }
 
-double countPrecision(const int *truth,
-                      size_t truth_len,
-                      const vector<int> &pred) {
+double countRecall(const int *truth,
+                   size_t truth_len,
+                   const vector<int> &pred) {
     if (truth_len == 0) {
         return 0.0;
     }

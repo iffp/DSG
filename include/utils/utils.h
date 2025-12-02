@@ -109,14 +109,14 @@ void print_set(const vector<T> &v) {
 void logTime(timeval &begin, timeval &end, const string &log);
 
 /**
- * 计算精度。
+ * Compute recall between truth and prediction vectors.
  *
- * @param truth 真实结果。
- * @param pred 预测结果。
- * @return 精度值。
+ * @param truth Ground-truth ids.
+ * @param pred Predicted ids.
+ * @return Recall value in [0, 1].
  */
-double countPrecision(const vector<int> &truth, const vector<int> &pred);
-double countPrecision(const int *truth, size_t truth_len, const vector<int> &pred);
+double countRecall(const vector<int> &truth, const vector<int> &pred);
+double countRecall(const int *truth, size_t truth_len, const vector<int> &pred);
 
 /**
  * 计算近似比率。

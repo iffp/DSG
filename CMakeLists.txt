@@ -45,4 +45,13 @@ if(BUILD_RANGE_BENCHMARKS)
     add_executable(test_l2_benchmark
         tests/test_l2_benchmark.cpp
     )
+
+    add_executable(test_hnsw_range
+        tests/test_hnsw_range.cpp
+    )
+    target_include_directories(test_hnsw_range PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/utils
+    )
+    target_link_libraries(test_hnsw_range PRIVATE UTIL)
 endif()

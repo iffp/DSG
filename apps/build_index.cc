@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "base_hnsw/space_l2.h"
+#include "base_hnsw/hnswlib.h"
 #include "data_wrapper.h"
 #include "dsg.h"
 

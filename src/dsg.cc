@@ -262,7 +262,7 @@ void DynamicSegmentGraph::initializeTemporaryHnsw(size_t ef_limit) {
         throw std::runtime_error("DynamicSegmentGraph::initializeTemporaryHnsw missing space.");
     }
     temp_hnsw_ = std::make_unique<HnswType>(space_, data_wrapper->data_size, M, ef_construction, random_seed);
-    temp_hnsw_->ef_max_ = std::max<std::size_t>(ef_limit, static_cast<std::size_t>(M));
+    temp_hnsw_->setEf(ef_limit);
 }
 
 void DynamicSegmentGraph::runKnnForLabel(
@@ -274,16 +274,14 @@ void DynamicSegmentGraph::runKnnForLabel(
     }
     candidates.clear();
     const void *query = static_cast<const void *>(data_wrapper->nodes.at(label));
-    auto queue = temp_hnsw_->searchKnnInternal(const_cast<void *>(query),
-                                               static_cast<int>(ef_limit));
-    while (!queue.empty()) {
-        const auto &entry = queue.top();
-        const unsigned neighbor_label =
-            static_cast<unsigned>(temp_hnsw_->getExternalLabel(entry.second));
-        if (neighbor_label != label) {
-            candidates.emplace_back(neighbor_label, entry.first);
+    temp_hnsw_->setEf(ef_limit);
+    const auto results = temp_hnsw_->searchKnnCloserFirst(query, ef_limit);
+    for (const auto &entry : results) {
+        const unsigned neighbor_label = static_cast<unsigned>(entry.second);
+        if (neighbor_label == label) {
+            continue;
         }
-        queue.pop();
+        candidates.emplace_back(neighbor_label, entry.first);
     }
     std::sort(candidates.begin(), candidates.end(),
               [](const auto &lhs, const auto &rhs) { return lhs.second < rhs.second; });

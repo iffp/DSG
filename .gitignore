@@ -1,4 +1,4 @@
-build
+/build*
 build-debug
 *.index
 /.cursor
