@@ -239,14 +239,14 @@ public:
     virtual vector<int> rangeFilteringSearchInRange(
         const SearchParams *search_params,
         SearchInfo *search_info,
-        const vector<float> &query,
+        const float *query,
         const std::pair<int, int> query_bound) = 0;
 
     /// 在指定范围外执行过滤性范围查询的纯虚函数接口
     virtual vector<int> rangeFilteringSearchOutBound(
         const SearchParams *search_params,
         SearchInfo *search_info,
-        const vector<float> &query,
+        const float *query,
         const std::pair<int, int> query_bound) = 0;
     virtual ~BaseIndex() {
     }

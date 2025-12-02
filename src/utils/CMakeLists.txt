@@ -9,7 +9,7 @@ endif()
 
 file(GLOB_RECURSE native_srcs *.cc *.cpp)
 
-include_directories(${PROJECT_SOURCE_DIR}/include/common)
+include_directories(${PROJECT_SOURCE_DIR}/include/utils)
 
 add_library(UTIL STATIC ${native_srcs} )
 

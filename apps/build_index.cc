@@ -5,109 +5,123 @@
  * @copyright Copyright (c) 2025
  */
 
-#include <algorithm>
+#include <chrono>
+#include <cstring>
 #include <iostream>
-#include <map>
-#include <numeric>
-#include <random>
-#include <sstream>
-#include <vector>
-#include <tuple>
-#include <iomanip>
+#include <stdexcept>
+#include <string>
 
-#include "data_processing.h"
+#include "base_hnsw/space_l2.h"
 #include "data_wrapper.h"
-#include "index_base.h"
-#include "logger.h"
-#include "reader.h"
-#include "compact_graph.h"
-#include "segment_graph_2d.h"
-#include "utils.h"
+#include "dsg.h"
 
-#ifdef __linux__
-#include "sys/sysinfo.h"
-#include "sys/types.h"
-#endif
+using namespace std::chrono;
 
-using std::cout;
-using std::endl;
-using std::string;
-using std::to_string;
-using std::vector;
-
-int main(int argc, char **argv) {
-#ifdef USE_SSE
-    cout << "Use SSE" << endl;
-#endif
-
-    // Parameters
-    string dataset = "deep";
+namespace {
+struct BuildConfig {
+    std::string dataset = "deep";
+    std::string dataset_path;
+    std::string query_path;
+    std::string index_path = "dsg.index";
     int data_size = 100000;
-    string dataset_path = "";
-    string method = "";
-    string query_path = "/research/projects/zp128/RangeIndexWithRandomInsertion/data/deep1B_queries.fvecs";
-    unsigned index_k = 8;
-    unsigned ef_max = 500;
-    unsigned ef_construction = 100;
     int query_num = 1000;
     int query_k = 10;
-    float alpha = 1.0;
+    unsigned index_k = 16;
+    unsigned ef_construction = 400;
+    unsigned ef_max = 1000;
+    unsigned random_seed = 2025;
+    float alpha = 1.0F;
+};
 
-    string indexk_str = "";
-    string ef_con_str = "";
-    string index_path;
-
-    for (int i = 0; i < argc; i++) {
-        string arg = argv[i];
-        if (arg == "-dataset") dataset = string(argv[i + 1]);
-        if (arg == "-N")
-            data_size = atoi(argv[i + 1]);
-        if (arg == "-dataset_path")
-            dataset_path = string(argv[i + 1]);
-        if (arg == "-index_path")
-            index_path = string(argv[i + 1]);
-        if (arg == "-method")
-            method = string(argv[i + 1]);
-        if (arg == "-k")
-            index_k = atoi(argv[i + 1]);
-        if (arg == "-ef_max")
-            ef_max = atoi(argv[i + 1]);
-        if (arg == "-ef_construction")
-            ef_construction = atoi(argv[i + 1]);
-        if (arg == "-alpha")
-            alpha = atof(argv[i + 1]);
-    }
-
-    DataWrapper data_wrapper(query_num, query_k, dataset, data_size);
-    data_wrapper.readData(dataset_path, query_path); // query_path is useless when just building index
-
-    cout << "index K:" << index_k<< " ef construction: "<<ef_construction<<" ef_max: "<< ef_max<< endl;
-
-    base_hnsw::L2Space ss(data_wrapper.data_dim);
-    timeval t1, t2;
-    BaseIndex* index;
-
-    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max, alpha);
-    i_params.recursion_type = BaseIndex::IndexParams::MAX_POS;
-    {
-        
-        if(method == "Seg2D"){
-            index = new SeRF::IndexSegmentGraph2D(&ss, &data_wrapper);
-        }else{
-            index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
+BuildConfig parseArgs(int argc, char **argv) {
+    BuildConfig cfg;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto require_value = [&](const char *flag) -> const char * {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument(std::string("Missing value for ") + flag);
+            }
+            return argv[++i];
+        };
+        if (arg == "-dataset") {
+            cfg.dataset = require_value("-dataset");
+        } else if (arg == "-dataset_path") {
+            cfg.dataset_path = require_value("-dataset_path");
+        } else if (arg == "-query_path") {
+            cfg.query_path = require_value("-query_path");
+        } else if (arg == "-index_path") {
+            cfg.index_path = require_value("-index_path");
+        } else if (arg == "-N") {
+            cfg.data_size = std::stoi(require_value("-N"));
+        } else if (arg == "-query_num") {
+            cfg.query_num = std::stoi(require_value("-query_num"));
+        } else if (arg == "-query_k") {
+            cfg.query_k = std::stoi(require_value("-query_k"));
+        } else if (arg == "-k") {
+            cfg.index_k = static_cast<unsigned>(std::stoul(require_value("-k")));
+        } else if (arg == "-ef_construction") {
+            cfg.ef_construction = static_cast<unsigned>(std::stoul(require_value("-ef_construction")));
+        } else if (arg == "-ef_max") {
+            cfg.ef_max = static_cast<unsigned>(std::stoul(require_value("-ef_max")));
+        } else if (arg == "-alpha") {
+            cfg.alpha = std::stof(require_value("-alpha"));
+        } else if (arg == "-seed") {
+            cfg.random_seed = static_cast<unsigned>(std::stoul(require_value("-seed")));
+        } else if (arg == "-h" || arg == "--help") {
+            throw std::invalid_argument("usage");
         }
-
-        cout << "method: " << method<<" parameters: ef_construction ( " + to_string(i_params.ef_construction) + " )  index-k( "
-                << i_params.K << ")  ef_max (" << i_params.ef_max << ") "
-                << endl;
-        gettimeofday(&t1, NULL);
-        index->buildIndex(&i_params);
-        gettimeofday(&t2, NULL);
-        logTime(t1, t2, "Build Index Time");
-        
-        index->save(index_path);
     }
+    if (cfg.dataset_path.empty()) {
+        throw std::invalid_argument("dataset_path is required (-dataset_path).");
+    }
+    return cfg;
+}
 
+void printUsage() {
+    std::cout << "Usage: build_index "
+                 "-dataset_path <path> [-dataset name] [-N size] [-k out_degree] "
+                 "[-ef_construction val] [-ef_max val] [-alpha val] "
+                 "[-query_path path] [-index_path path] [-seed val]\n";
+}
+} // namespace
+
+int main(int argc, char **argv) {
+    try {
+        const BuildConfig cfg = parseArgs(argc, argv);
+
+        DataWrapper data_wrapper(cfg.query_num, cfg.query_k, cfg.dataset, cfg.data_size);
+        std::string dataset_path = cfg.dataset_path;
+        std::string query_path = cfg.query_path;
+        data_wrapper.readData(dataset_path, query_path);
+
+        base_hnsw::L2Space space(data_wrapper.data_dim);
+        dsg::DynamicSegmentGraph index(&space, &data_wrapper);
+        index.M = cfg.index_k;
+        index.ef_construction = cfg.ef_construction;
+        index.ef_max = cfg.ef_max;
+        index.alpha = cfg.alpha;
+        index.random_seed = cfg.random_seed;
+
+        std::cout << "[DSG] dataset=" << cfg.dataset << " N=" << cfg.data_size << " M=" << cfg.index_k
+                  << " ef_construction=" << cfg.ef_construction << " ef_max=" << cfg.ef_max
+                  << " alpha=" << cfg.alpha << "\n";
+
+        const auto build_start = steady_clock::now();
+        index.build();
+        const auto build_end = steady_clock::now();
+        const double seconds = duration<double>(build_end - build_start).count();
+        std::cout << "[DSG] Build finished in " << seconds << " seconds\n";
+        
+        index.save(cfg.index_path);
+        std::cout << "[DSG] Index saved to " << cfg.index_path << "\n";
+    } catch (const std::invalid_argument &ex) {
+        printUsage();
+        std::cerr << "Argument error: " << ex.what() << std::endl;
+        return 1;
+    } catch (const std::exception &ex) {
+        std::cerr << "Build failed: " << ex.what() << std::endl;
+        return 1;
+    }
 
     return 0;
 }

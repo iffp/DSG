@@ -710,7 +710,7 @@ public:
         // may has minor recall decrement
         // #pragma omp parallel for schedule(monotonic : dynamic)
         for (size_t i = 0; i < data_wrapper->data_size; ++i) {
-            hnsw->addPoint(data_wrapper->nodes.at(i).data(), i);
+            hnsw->addPoint(data_wrapper->nodes.at(i), i);
         }
         gettimeofday(&tt2, NULL);
         index_info->index_time = CountTime(tt1, tt2);
@@ -745,7 +745,7 @@ public:
         timeval tt1, tt2;
         gettimeofday(&tt1, NULL);
         for (auto i : nodes_ids) {
-            hnsw->addPoint(data_wrapper->nodes.at(i).data(), i);
+            hnsw->addPoint(data_wrapper->nodes.at(i), i);
         }
 
         gettimeofday(&tt2, NULL);
@@ -800,7 +800,7 @@ public:
     vector<int> rangeFilteringSearchInRange(
         const SearchParams *search_params,
         SearchInfo *search_info,
-        const vector<float> &query,
+        const float *query,
         const std::pair<int, int> query_bound) override {
         // 时间测量变量初始化
         timeval tt1, tt2, tt3, tt4;
@@ -831,7 +831,7 @@ public:
             int interval = (query_bound.second - lbound) / 3;
             for (size_t i = 0; i < 3; i++) {
                 int point = lbound + interval * i;
-                float dist = EuclideanDistance(data_wrapper->nodes[point], query); // 计算距离
+                float dist = EuclideanDistance(data_wrapper->nodes[point], query, data_wrapper->data_dim); // 计算距离
                 candidate_set.push(make_pair(-dist, point));                       // 将负距离和点ID推入候选集
                 enter_list.emplace_back(point);                                    // 添加到入口点列表
                 visited_array[point] = visited_array_tag;                          // 标记已访问
@@ -840,7 +840,7 @@ public:
         gettimeofday(&tt3, NULL);
 
         // only one center
-        // float dist_enter = EuclideanDistance(data_nodes[l_bound], query);
+        // float dist_enter = EuclideanDistance(data_nodes[l_bound], query, data_wrapper->data_dim);
         // candidate_set.push(make_pair(-dist_enter, l_bound));
         // TODO: How to find proper enters. // looks like useless
 
@@ -923,8 +923,8 @@ public:
                         visited_array[candidate_id] = visited_array_tag; // 标记为已访问
 
                         // 计算距离
-                        float dist = fstdistfunc_(query.data(),
-                                                  data_wrapper->nodes[candidate_id].data(),
+                        float dist = fstdistfunc_(query,
+                                                  data_wrapper->nodes[candidate_id],
                                                   dist_func_param_);
 
 #ifdef LOG_DEBUG_MODE
@@ -978,7 +978,7 @@ public:
     vector<int> rangeFilteringSearchOutBound(
         const SearchParams *search_params,
         SearchInfo *search_info,
-        const vector<float> &query,
+        const float *query,
         const std::pair<int, int> query_bound) override {
         timeval tt1, tt2, tt3, tt4;
 
@@ -1002,7 +1002,7 @@ public:
             int interval = (query_bound.second - lbound) / 3;
             for (size_t i = 0; i < 3; i++) {
                 int point = lbound + interval * i;
-                float dist = EuclideanDistance(data_wrapper->nodes[point], query);
+                float dist = EuclideanDistance(data_wrapper->nodes[point], query, data_wrapper->data_dim);
                 candidate_set.push(make_pair(-dist, point));
                 enter_list.emplace_back(point);
                 visited_array[point] = visited_array_tag;
@@ -1058,8 +1058,8 @@ public:
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         visited_array[candidate_id] = visited_array_tag;
 
-                        float dist = fstdistfunc_(query.data(),
-                                                  data_wrapper->nodes[candidate_id].data(),
+                        float dist = fstdistfunc_(query,
+                                                  data_wrapper->nodes[candidate_id],
                                                   dist_func_param_);
 
                         num_search_comparison++;

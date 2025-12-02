@@ -1,194 +1,180 @@
 /**
- * @file exp_halfbound.cc
- * @author Chaoji Zuo (chaoji.zuo@rutgers.edu)
- * @brief Benchmark Half-Bounded Range Filter Search
- * @date 2023-12-22
+ * @file query_index.cc
+ * @brief Evaluate the Dynamic Segment Graph index on range-filter queries.
  *
- * @copyright Copyright (c) 2023
+ * Usage:
+ *   query_index -dataset_path <vectors.bin> -query_path <queries.bin>
+ *               -index_path <index.dsg> -groundtruth_root <dir>
+ *               [-dataset deep] [-N 100000] [-query_num 1000]
+ *               [-query_k 10] [-search_ef 200]
  */
 
-#include <algorithm>
-#include <iostream>
-#include <map>
-#include <numeric>
-#include <random>
-#include <sstream>
-#include <vector>
-#include <tuple>
-
-#include "data_processing.h"
-#include "data_wrapper.h"
-#include "index_base.h"
-#include "logger.h"
-#include "reader.h"
-#include "segment_graph_2d.h"
-#include "compact_graph.h"
-#include "utils.h"
+#include <chrono>
 #include <iomanip>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
-#ifdef __linux__
-#include "sys/sysinfo.h"
-#include "sys/types.h"
-#endif
+#include "base_hnsw/space_l2.h"
+#include "data_wrapper.h"
+#include "dsg.h"
+#include "utils/utils.h"
 
-using std::cout;
-using std::endl;
-using std::string;
-using std::to_string;
-using std::vector;
+using namespace std::chrono;
 
-void log_result_recorder(
-    const std::map<int, std::tuple<double, double, double, double>> &result_recorder,
-    const std::map<int, std::tuple<float, float>> &comparison_recorder,
-    const int amount) {
-    for (auto item : result_recorder) {
-        const auto &[recall, calDistTime, internal_search_time, fetch_nn_time] = item.second;
-        const auto &[comps, hops] = comparison_recorder.at(item.first);
-        const auto cur_range_amount = amount / result_recorder.size();
-        cout << std::setiosflags(ios::fixed) << std::setprecision(4)
-             << "range: " << item.first
-             << "\t recall: " << recall / cur_range_amount
-             << "\t QPS: " << std::setprecision(0)
-             << cur_range_amount / internal_search_time << "\t"
-             << "Comps: " << comps / cur_range_amount << std::setprecision(4)
-             << "\t Hops: " << hops / cur_range_amount << std::setprecision(4) << std::endl;
-    }
-}
-
-#ifdef SAVESEARCHPATH
-std::ofstream Compact::IndexCompactGraph::log_query_path_nns("path_nns_deep_96.bin", std::ios::out | std::ios::binary);
-#endif
-
-int main(int argc, char **argv) {
-#ifdef USE_SSE
-    cout << "Use SSE" << endl;
-#endif
-
-    // Parameters
-    string dataset = "deep";
+namespace {
+struct QueryConfig {
+    std::string dataset = "deep";
     int data_size = 100000;
-    string dataset_path = "";
-    string query_path = "";
-    string groundtruth_path = "";
+    std::string dataset_path;
+    std::string query_path;
+    std::string index_path;
+    std::string groundtruth_root;
     int query_num = 1000;
     int query_k = 10;
-    unsigned index_k = 8;
-    unsigned ef_max = 500;
-    unsigned ef_construction = 100;
-    
-    string index_path;
+    unsigned search_ef = 200;
+};
 
-    for (int i = 0; i < argc; i++) {
-        string arg = argv[i];
-        if (arg == "-dataset") dataset = string(argv[i + 1]);
-        if (arg == "-N")
-            data_size = atoi(argv[i + 1]);
-        if (arg == "-dataset_path")
-            dataset_path = string(argv[i + 1]);
-        if (arg == "-query_path")
-            query_path = string(argv[i + 1]);
-        if (arg == "-groundtruth_path")
-            groundtruth_path = string(argv[i + 1]);
-        if (arg == "-index_path")
-            index_path = string(argv[i + 1]);
-        if (arg == "-k")
-            index_k = atoi(argv[i + 1]);
-        if (arg == "-ef_max")
-            ef_max = atoi(argv[i + 1]);
-        if (arg == "-ef_construction")
-            ef_construction = atoi(argv[i + 1]);
-    }
-
-    DataWrapper data_wrapper(query_num, query_k, dataset, data_size);
-    data_wrapper.readData(dataset_path, query_path);
-    data_wrapper.LoadGroundtruth(groundtruth_path);
-    assert(data_wrapper.query_ids.size() == data_wrapper.query_ranges.size());
-
-    int st = 16;     // starting value
-    int ed = 400;    // ending value (inclusive)
-    int stride = 16; // stride value
-    std::vector<int> searchef_para_range_list;
-    // searchef_para_range_list.push_back(96);
-    // // add small seach ef
-    // for (int i = 1; i < st; i += 1) {
-    //     searchef_para_range_list.push_back(i);
-    // }
-
-    for (int i = st; i <= ed; i += stride) {
-        searchef_para_range_list.push_back(i);
-    }
-
-    // // further add more large search ef
-    // st = 500;     // starting value
-    // ed = 1600;    // ending value (inclusive)
-    // stride = 100; // stride value
-    // for (int i = st; i <= ed; i += stride) {
-    //     searchef_para_range_list.push_back(i);
-    // }
-
-    cout << "search ef:" << endl;
-    print_set(searchef_para_range_list);
-
-    base_hnsw::L2Space ss(data_wrapper.data_dim);
-
-    timeval t1, t2;
-
-    BaseIndex::IndexParams i_params(index_k, ef_construction, ef_max);
-    Compact::IndexCompactGraph* index;
-    index = new Compact::IndexCompactGraph(&ss, &data_wrapper);
-    BaseIndex::SearchInfo search_info(&data_wrapper, &i_params, "DSG",
-                                      "benchmark");
-
-    gettimeofday(&t1, NULL);
-    index->load(index_path);
-    index->initLabelSet();
-    gettimeofday(&t2, NULL);
-    logTime(t1, t2, "Load Index Time");
-
-    {
-        timeval tt3, tt4;
-        BaseIndex::SearchParams s_params;
-        s_params.query_K = data_wrapper.query_k;
-        for (auto one_searchef : searchef_para_range_list) {
-            s_params.search_ef = one_searchef;
-            std::map<int, std::tuple<double, double, double, double>> result_recorder; // first->precision, second-> caldist time, third->query_time
-            std::map<int, std::tuple<float, float>> comparison_recorder;
-            gettimeofday(&tt3, NULL);
-
-            for (int idx = 0; idx < data_wrapper.query_ids.size(); idx++) {
-                int one_id = data_wrapper.query_ids.at(idx);
-                s_params.query_range =
-                    data_wrapper.query_ranges.at(idx).second - data_wrapper.query_ranges.at(idx).first + 1;
-
-                // output the range in the log query path
-#ifdef SAVESEARCHPATH
-                Compact::IndexCompactGraph::log_query_path_nns.write(reinterpret_cast<const char*>(&s_params.query_range), sizeof(s_params.query_range));
-#endif
-
-                auto res = index->rangeFilteringSearchInRange(
-                &s_params, &search_info, data_wrapper.querys.at(one_id),
-                data_wrapper.query_ranges.at(idx));
-                search_info.precision =
-                    countPrecision(data_wrapper.groundtruth.at(idx), res);
-                    
-                std::get<0>(result_recorder[s_params.query_range]) += search_info.precision;
-                std::get<1>(result_recorder[s_params.query_range]) += search_info.cal_dist_time;
-                std::get<2>(result_recorder[s_params.query_range]) += search_info.internal_search_time;
-                std::get<3>(result_recorder[s_params.query_range]) += search_info.fetch_nns_time;
-                std::get<0>(comparison_recorder[s_params.query_range]) += search_info.total_comparison;
-                std::get<1>(comparison_recorder[s_params.query_range]) += search_info.path_counter;
+QueryConfig parseArgs(int argc, char **argv) {
+    QueryConfig cfg;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto require_value = [&](const char *flag) -> const char * {
+            if (i + 1 >= argc) {
+                throw std::invalid_argument(std::string("Missing value for ") + flag);
             }
-#ifdef SAVESEARCHPATH
-            Compact::IndexCompactGraph::log_query_path_nns.close();
-#endif            
-            cout << endl
-                 << "Search ef: " << one_searchef << endl
-                 << "========================" << endl;
-            log_result_recorder(result_recorder, comparison_recorder,
-                                data_wrapper.query_ids.size());
-            cout << "========================" << endl;
-            logTime(tt3, tt4, "total query time");
+            return argv[++i];
+        };
+        if (arg == "-dataset") {
+            cfg.dataset = require_value("-dataset");
+        } else if (arg == "-N") {
+            cfg.data_size = std::stoi(require_value("-N"));
+        } else if (arg == "-dataset_path") {
+            cfg.dataset_path = require_value("-dataset_path");
+        } else if (arg == "-query_path") {
+            cfg.query_path = require_value("-query_path");
+        } else if (arg == "-index_path") {
+            cfg.index_path = require_value("-index_path");
+        } else if (arg == "-groundtruth_root") {
+            cfg.groundtruth_root = require_value("-groundtruth_root");
+        } else if (arg == "-query_num") {
+            cfg.query_num = std::stoi(require_value("-query_num"));
+        } else if (arg == "-query_k") {
+            cfg.query_k = std::stoi(require_value("-query_k"));
+        } else if (arg == "-search_ef") {
+            cfg.search_ef = static_cast<unsigned>(std::stoul(require_value("-search_ef")));
+        } else if (arg == "-h" || arg == "--help") {
+            throw std::invalid_argument("usage");
         }
+    }
+    if (cfg.dataset_path.empty() || cfg.query_path.empty() || cfg.index_path.empty()) {
+        throw std::invalid_argument("dataset_path, query_path, and index_path are required.");
+    }
+    if (cfg.groundtruth_root.empty()) {
+        throw std::invalid_argument("groundtruth_root is required.");
+    }
+    return cfg;
+}
+
+void printUsage() {
+    std::cout
+        << "Usage: query_index -dataset_path <vectors.bin> -query_path <queries.bin> "
+           "-index_path <index.dsg> -groundtruth_root <dir> [options]\n"
+        << "Options:\n"
+        << "  -dataset <name>          Dataset label (default deep)\n"
+        << "  -N <size>                Number of data points (default 100000)\n"
+        << "  -query_num <num>         Query count (default 1000)\n"
+        << "  -query_k <k>             Query top-K (default 10)\n"
+        << "  -search_ef <ef>          Search ef (default 200)\n";
+}
+
+std::vector<int> toVector(const std::vector<unsigned> &input, size_t limit) {
+    std::vector<int> result;
+    result.reserve(limit);
+    for (unsigned id : input) {
+        if (id == std::numeric_limits<unsigned>::max()) {
+            continue;
+        }
+        result.emplace_back(static_cast<int>(id));
+        if (result.size() == limit) {
+            break;
+        }
+    }
+    return result;
+}
+} // namespace
+
+int main(int argc, char **argv) {
+    try {
+        const QueryConfig cfg = parseArgs(argc, argv);
+
+        DataWrapper data_wrapper(cfg.query_num, cfg.query_k, cfg.dataset, cfg.data_size);
+        std::string dataset_path = cfg.dataset_path;
+        std::string query_path = cfg.query_path;
+        data_wrapper.readData(dataset_path, query_path);
+        data_wrapper.LoadGroundtruth(cfg.groundtruth_root);
+
+        base_hnsw::L2Space space(data_wrapper.data_dim);
+        dsg::DynamicSegmentGraph index(&space, &data_wrapper);
+        index.setQueryTopK(static_cast<unsigned>(cfg.query_k));
+        index.setSearchEf(cfg.search_ef);
+        index.load(cfg.index_path);
+
+        std::cout << "[DSG] Loaded index from " << cfg.index_path << std::endl;
+        std::cout << "[DSG] Running queries with search_ef=" << cfg.search_ef << std::endl;
+
+        for (size_t range_id = 0; range_id < data_wrapper.range_count(); ++range_id) {
+            const auto &range_bounds = data_wrapper.query_bounds_by_range(range_id);
+            const auto &range_truth = data_wrapper.groundtruth_by_range(range_id);
+
+            if (range_bounds.empty()) {
+                continue;
+            }
+
+            double precision_acc = 0.0;
+            double latency_acc = 0.0;
+            size_t evaluated = 0;
+
+            for (size_t query_idx = 0; query_idx < range_bounds.size(); ++query_idx) {
+                const auto &bounds = range_bounds[query_idx];
+                const float *query_vec = data_wrapper.querys.at(query_idx);
+
+                const auto t0 = steady_clock::now();
+                index.rangeSearch(query_vec, bounds);
+                const auto t1 = steady_clock::now();
+
+                const auto elapsed = duration<double>(t1 - t0).count();
+                latency_acc += elapsed;
+
+                const int *truth_row = range_truth[query_idx];
+                auto preds = toVector(index.returned_nns, static_cast<size_t>(cfg.query_k));
+                precision_acc += countPrecision(truth_row, static_cast<size_t>(cfg.query_k), preds);
+                ++evaluated;
+            }
+
+            if (evaluated == 0) {
+                continue;
+            }
+
+            const double avg_precision = precision_acc / static_cast<double>(evaluated);
+            const double avg_latency = latency_acc / static_cast<double>(evaluated);
+            const double qps = latency_acc > 0 ? static_cast<double>(evaluated) / latency_acc : 0.0;
+
+            std::cout << std::fixed << std::setprecision(4);
+            std::cout << "[Range ratio " << DataWrapper::kRangeRatios[range_id] * 100 << "%] "
+                      << "Precision=" << avg_precision << " "
+                      << "Latency=" << avg_latency * 1e3 << " ms "
+                      << "QPS=" << qps << std::endl;
+        }
+    } catch (const std::invalid_argument &ex) {
+        printUsage();
+        std::cerr << "Argument error: " << ex.what() << std::endl;
+        return 1;
+    } catch (const std::exception &ex) {
+        std::cerr << "Query failed: " << ex.what() << std::endl;
+        return 1;
     }
 
     return 0;

@@ -149,7 +149,7 @@ namespace base_hnsw
          * @param label 标签
          * @param neighbors 邻居列表
          */
-        void linkNeighbors(const void *data_point, labeltype label, vector<int> neighbors) {}
+        void linkNeighbors(const void *data_point, labeltype label, std::vector<int> neighbors) {}
 
         /**
          * @brief 添加邻居点

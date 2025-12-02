@@ -1,94 +1,23 @@
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(generate_groundtruth generate_groundtruth.cc)
-target_link_libraries(generate_groundtruth UTIL)
-target_compile_options(generate_groundtruth PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(generate_groundtruth ${OpenMP_CXX_FLAGS})
-target_link_libraries(generate_groundtruth OpenMP::OpenMP_CXX)
+function(add_dsg_app TARGET_NAME SOURCE_FILE)
+    add_executable(${TARGET_NAME} ${SOURCE_FILE})
+    target_include_directories(${TARGET_NAME} PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/utils
+        ${PROJECT_SOURCE_DIR}/src
+    )
+    target_link_libraries(${TARGET_NAME} PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
+    target_compile_options(${TARGET_NAME} PRIVATE -Wall ${OpenMP_CXX_FLAGS})
+    target_link_libraries(${TARGET_NAME} PRIVATE ${OpenMP_CXX_FLAGS})
+endfunction()
 
-add_executable(deep_arbitrary benchmark_deep_arbitrary.cc)
-target_link_libraries(deep_arbitrary UTIL)
-target_compile_options(deep_arbitrary PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(deep_arbitrary ${OpenMP_CXX_FLAGS})
-target_link_libraries(deep_arbitrary OpenMP::OpenMP_CXX)
+add_dsg_app(generate_groundtruth generate_groundtruth.cc)
+add_dsg_app(build_index build_index.cc)
+add_dsg_app(query_index query_index.cc)
 
-add_executable(compact_arbitrary benchmark_compactg_arbitrary.cc)
-target_link_libraries(compact_arbitrary UTIL)
-target_compile_options(compact_arbitrary PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(compact_arbitrary ${OpenMP_CXX_FLAGS})
-target_link_libraries(compact_arbitrary OpenMP::OpenMP_CXX)
-
-add_executable(build_index build_index.cc)
-target_link_libraries(build_index UTIL)
-target_compile_options(build_index PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(build_index ${OpenMP_CXX_FLAGS})
-target_link_libraries(build_index OpenMP::OpenMP_CXX)
-
-add_executable(query_index query_index.cc)
-target_link_libraries(query_index UTIL)
-target_compile_options(query_index PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(query_index ${OpenMP_CXX_FLAGS})
-target_link_libraries(query_index OpenMP::OpenMP_CXX)
-
-add_executable(scalibility scalibility_exp.cc)
-target_link_libraries(scalibility UTIL)
-target_compile_options(scalibility PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(scalibility ${OpenMP_CXX_FLAGS})
-target_link_libraries(scalibility OpenMP::OpenMP_CXX)
-
-add_executable(ordered_stream ordered_serfVsDsg.cc)
-target_link_libraries(ordered_stream UTIL)
-target_compile_options(ordered_stream PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(ordered_stream ${OpenMP_CXX_FLAGS})
-target_link_libraries(ordered_stream OpenMP::OpenMP_CXX)
-
-add_executable(compact_stream compact_stream.cc)
-target_link_libraries(compact_stream UTIL)
-target_compile_options(compact_stream PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(compact_stream ${OpenMP_CXX_FLAGS})
-target_link_libraries(compact_stream OpenMP::OpenMP_CXX)
-
-add_executable(knn_first knnfirst.cc)
-target_link_libraries(knn_first UTIL)
-target_compile_options(knn_first PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(knn_first ${OpenMP_CXX_FLAGS})
-target_link_libraries(knn_first OpenMP::OpenMP_CXX)
-
-add_executable(get_incrementalgt getIncrementalGroundtruth.cc)
-target_link_libraries(get_incrementalgt UTIL)
-target_compile_options(get_incrementalgt PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(get_incrementalgt ${OpenMP_CXX_FLAGS})
-target_link_libraries(get_incrementalgt OpenMP::OpenMP_CXX)
-
-add_executable(incre_stream incremental_stream.cc)
-target_link_libraries(incre_stream UTIL)
-target_compile_options(incre_stream PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(incre_stream ${OpenMP_CXX_FLAGS})
-target_link_libraries(incre_stream OpenMP::OpenMP_CXX)
-
-add_executable(incre_knnf incremental_knnfirst.cc)
-target_link_libraries(incre_knnf UTIL)
-target_compile_options(incre_knnf PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(incre_knnf ${OpenMP_CXX_FLAGS})
-target_link_libraries(incre_knnf OpenMP::OpenMP_CXX)
-
-# DIGRA baseline (aligned IO)
-add_executable(digra_stream digra_stream.cc)
-target_link_libraries(digra_stream UTIL)
-target_compile_options(digra_stream PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(digra_stream ${OpenMP_CXX_FLAGS})
-target_link_libraries(digra_stream OpenMP::OpenMP_CXX)
-
-# Ordered DSG vs DIGRA (200k total, 180k build + 20k inserts)
-add_executable(ordered_dsg_vs_digra ordered_dsg_vs_digra.cc)
-target_link_libraries(ordered_dsg_vs_digra UTIL)
-target_compile_options(ordered_dsg_vs_digra PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(ordered_dsg_vs_digra ${OpenMP_CXX_FLAGS})
-target_link_libraries(ordered_dsg_vs_digra OpenMP::OpenMP_CXX)
-
-# DIGRA adapter TU to isolate symbols
-add_library(digra_adapter STATIC digra_adapter.cc)
-target_compile_options(digra_adapter PRIVATE -Wall ${OpenMP_CXX_FLAGS})
-target_link_libraries(digra_adapter ${OpenMP_CXX_FLAGS})
-
-target_link_libraries(ordered_dsg_vs_digra digra_adapter)
+if(DSG_BUILD_INDEX_DEBUG)
+    add_dsg_app(build_index_debug build_index.cc)
+    target_compile_definitions(build_index_debug PRIVATE DSG_DEBUG_BUILD)
+    target_compile_options(build_index_debug PRIVATE -O0 -g)
+endif()

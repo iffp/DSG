@@ -1,4 +1,7 @@
 build
+build-debug
+*.index
+/.cursor
 .vscode
 test.dSYM
 data

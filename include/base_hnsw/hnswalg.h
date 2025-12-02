@@ -983,7 +983,9 @@ namespace base_hnsw
                                 CompareByFirst> &top_candidates,
             int level, bool isUpdate)
         {
-            return 0; // ??? why return 0
+            // Level-0 edges follow the same bidirectional wiring as higher layers.
+            return mutuallyConnectNewElement(
+                data_point, cur_c, top_candidates, level, isUpdate);
         }
 
         /**
@@ -1016,12 +1018,14 @@ namespace base_hnsw
         std::priority_queue<std::pair<dist_t, tableint>> searchKnnInternal(
             void *query_data, int k)
         {
-            // 初始化候选节点优先队列
-            std::priority_queue<std::pair<dist_t, tableint>> top_candidates;
+            using InternalQueue = std::priority_queue<std::pair<dist_t, tableint>,
+                                                      std::vector<std::pair<dist_t, tableint>>,
+                                                      CompareByFirst>;
+            InternalQueue top_candidates;
 
             // 如果数据库为空，则直接返回空候选集
             if (cur_element_count == 0)
-                return top_candidates;
+                return std::priority_queue<std::pair<dist_t, tableint>>();
 
             // 从入口节点开始搜索
             tableint currObj = enterpoint_node_;
@@ -1038,7 +1042,7 @@ namespace base_hnsw
                     changed = false;
                     // 获取当前层级的链接列表
                     int *data = (int *)get_linklist(currObj, level);
-                    int size = getListCount(data);
+                    int size = getListCount((linklistsizeint *)data);
 
                     // 遍历链接列表中的每个节点
                     tableint *datal = (tableint *)(data + 1);
@@ -1068,13 +1072,13 @@ namespace base_hnsw
             // 根据是否包含删除标记选择不同的搜索策略
             if (has_deletions_)
             {
-                std::priority_queue<std::pair<dist_t, tableint>> top_candidates1 =
+                InternalQueue top_candidates1 =
                     searchBaseLayerST<true>(currObj, query_data, ef_);
                 top_candidates.swap(top_candidates1);
             }
             else
             {
-                std::priority_queue<std::pair<dist_t, tableint>> top_candidates1 =
+                InternalQueue top_candidates1 =
                     searchBaseLayerST<false>(currObj, query_data, ef_);
                 top_candidates.swap(top_candidates1);
             }
@@ -1084,7 +1088,14 @@ namespace base_hnsw
             {
                 top_candidates.pop();
             }
-            return top_candidates;
+
+            std::priority_queue<std::pair<dist_t, tableint>> result;
+            while (!top_candidates.empty())
+            {
+                result.emplace(top_candidates.top());
+                top_candidates.pop();
+            }
+            return result;
         };
 
         void resizeIndex(size_t new_max_elements)

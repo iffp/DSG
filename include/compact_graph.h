@@ -429,7 +429,7 @@ public:
             }
         }
         sort(compact_graph->at(center_external_id).nns.begin(), compact_graph->at(center_external_id).nns.end());
-    }
+    } 
 
     void gen_rev_neighbors(unsigned center_external_id) {
         // 只要center_external_id是新加入的点，那么它的邻居的反向邻居里就一定没有他
@@ -833,14 +833,14 @@ public:
         // Set rebuild_HNSW is true, then it will only build the inner HNSW
         hnsw->if_rebuild_HNSW = true;
         for (size_t i : permutation) {
-            hnsw->addPoint(data_wrapper->nodes.at(i).data(), i);
+            hnsw->addPoint(data_wrapper->nodes.at(i), i);
         }
 
         // After the inner HNSW is build just find all the neighbors of each point
         hnsw->if_rebuild_HNSW = false;
         for (size_t i : permutation) {
             auto cur_c = hnsw->getInnerIdByLabel(i);
-            hnsw->gen_tmp_nn_list(data_wrapper->nodes.at(i).data(), cur_c);
+            hnsw->gen_tmp_nn_list(data_wrapper->nodes.at(i), cur_c);
         }
 
         gettimeofday(&tt2, NULL);
@@ -869,7 +869,7 @@ public:
     void generateNeighborsAll() {
         for (size_t i = 0; i < data_wrapper->data_size; i++) {
             auto cur_c = hnsw->getInnerIdByLabel((int)i);
-            hnsw->gen_tmp_nn_list(data_wrapper->nodes.at(i).data(), cur_c);
+            hnsw->gen_tmp_nn_list(data_wrapper->nodes.at(i), cur_c);
         }
     }
 
@@ -887,7 +887,7 @@ public:
         timeval tt1, tt2;
         gettimeofday(&tt1, NULL);
         for (auto i : nodes_ids) {
-            hnsw->addPoint(data_wrapper->nodes.at(i).data(), i);
+            hnsw->addPoint(data_wrapper->nodes.at(i), i);
         }
 
         gettimeofday(&tt2, NULL);
@@ -902,7 +902,7 @@ public:
         timeval tt1, tt2;
         gettimeofday(&tt1, NULL);
         for (auto i : nodes_ids) {
-            hnsw->addPoint(data_wrapper->nodes.at(i).data(), i);
+            hnsw->addPoint(data_wrapper->nodes.at(i), i);
         }
 
         gettimeofday(&tt2, NULL);
@@ -930,7 +930,7 @@ public:
     vector<int> rangeFilteringSearchInRange(
         const SearchParams *search_params,
         SearchInfo *search_info,
-        const vector<float> &query,
+        const float *query,
         const std::pair<int, int> query_bound) override {
         fetched_nns.clear();
 
@@ -963,7 +963,7 @@ public:
                     }
 
                     // Calculate distance
-                    float dist = EuclideanDistance(data_wrapper->nodes[point], query);
+                    float dist = EuclideanDistance(data_wrapper->nodes[point], query, data_wrapper->data_dim);
 
                     // Push the negative distance and point ID into candidate_set
                     candidate_set.push(make_pair(-dist, point));
@@ -1047,8 +1047,8 @@ public:
                 visited_array[candidate_id] = visited_array_tag; // 标记为已访问
 
                 // 计算距离
-                float dist = fstdistfunc_(query.data(),
-                                          data_wrapper->nodes[candidate_id].data(),
+                    float dist = fstdistfunc_(query,
+                                              data_wrapper->nodes[candidate_id],
                                           dist_func_param_);
 
 #ifdef PATH_REPORT
@@ -1121,7 +1121,7 @@ public:
     vector<int> rangeFilteringSearchOutBound(
         const SearchParams *search_params,
         SearchInfo *search_info,
-        const vector<float> &query,
+        const float *query,
         const std::pair<int, int> query_bound) override {
         return vector<int>();
     }

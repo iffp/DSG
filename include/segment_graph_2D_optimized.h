@@ -11,6 +11,7 @@
  #include <algorithm>
  #include <ctime>
  #include <iostream>
+ #include <iomanip>
  #include <limits>
  #include <numeric>
  #include <queue>
@@ -642,11 +643,11 @@
  #ifndef NO_PARALLEL_BUILD
  #pragma omp parallel for schedule(monotonic : dynamic)
      for (size_t i = 0; i < data_wrapper->data_size; ++i) {
-       hnsw.addPoint(data_wrapper->nodes.at(i).data(), i);
+       hnsw.addPoint(data_wrapper->nodes.at(i), i);
      }
  #else
      for (size_t i = 0; i < data_wrapper->data_size; ++i) {
-       hnsw.addPoint(data_wrapper->nodes.at(i).data(), i);
+       hnsw.addPoint(data_wrapper->nodes.at(i), i);
      }
  #endif
  
@@ -684,7 +685,7 @@
      timeval tt1, tt2;
      gettimeofday(&tt1, NULL);
      for (auto i : nodes_ids) {
-       hnsw->addPoint(data_wrapper->nodes.at(i).data(), i);
+       hnsw->addPoint(data_wrapper->nodes.at(i), i);
      }
 
      gettimeofday(&tt2, NULL);
@@ -722,10 +723,10 @@
    }
  
    // range filtering search, only calculate distance on on-range nodes.
-   vector<int> rangeFilteringSearchInRange(
-       const SearchParams *search_params, SearchInfo *search_info,
-       const vector<float> &query,
-       const std::pair<int, int> query_bound) override {
+  vector<int> rangeFilteringSearchInRange(
+      const SearchParams *search_params, SearchInfo *search_info,
+      const float *query,
+      const std::pair<int, int> query_bound) override {
      // timeval tt1, tt2, tt3, tt4;
      timeval tt3, tt4;
  
@@ -750,7 +751,7 @@
        int interval = (query_bound.second - lbound) / 3;
        for (size_t i = 0; i < 3; i++) {
          int point = lbound + interval * i;
-         float dist = EuclideanDistance(data_wrapper->nodes[point], query);
+         float dist = EuclideanDistance(data_wrapper->nodes[point], query, data_wrapper->data_dim);
          candidate_set.push(make_pair(-dist, point));
          enter_list.emplace_back(point);
          visited_array[point] = visited_array_tag;
@@ -759,7 +760,7 @@
      gettimeofday(&tt3, NULL);
  
      // only one center
-     // float dist_enter = EuclideanDistance(data_nodes[l_bound], query);
+     // float dist_enter = EuclideanDistance(data_nodes[l_bound], query, data_wrapper->data_dim);
      // candidate_set.push(make_pair(-dist_enter, l_bound));
      // TODO: How to find proper enters.
  
@@ -832,9 +833,9 @@
            if (!(visited_array[candidate_id] == visited_array_tag)) {
              visited_array[candidate_id] = visited_array_tag;
  
-             // float dist = EuclideanDistance(query, data_nodes[candidate_id]);
-             float dist = fstdistfunc_(query.data(),
-                                       data_wrapper->nodes[candidate_id].data(),
+             // float dist = EuclideanDistance(query, data_nodes[candidate_id], data_wrapper->data_dim);
+            float dist = fstdistfunc_(query,
+                                      data_wrapper->nodes[candidate_id],
                                        dist_func_param_);
  
  #ifdef LOG_DEBUG_MODE
@@ -885,10 +886,10 @@
    }
  
    // also calculate outbount dists, similar to knn-first
-   vector<int> rangeFilteringSearchOutBound(
-       const SearchParams *search_params, SearchInfo *search_info,
-       const vector<float> &query,
-       const std::pair<int, int> query_bound) override {
+  vector<int> rangeFilteringSearchOutBound(
+      const SearchParams *search_params, SearchInfo *search_info,
+      const float *query,
+      const std::pair<int, int> query_bound) override {
      // timeval tt1, tt2, tt3, tt4;
      timeval tt3, tt4;
  
@@ -910,7 +911,7 @@
        int interval = (query_bound.second - lbound) / 3;
        for (size_t i = 0; i < 3; i++) {
          int point = lbound + interval * i;
-         float dist = EuclideanDistance(data_wrapper->nodes[point], query);
+         float dist = EuclideanDistance(data_wrapper->nodes[point], query, data_wrapper->data_dim);
          candidate_set.emplace(-dist, point);
          enter_list.emplace_back(point);
          visited_array[point] = visited_array_tag;
@@ -966,8 +967,8 @@
            if (!(visited_array[candidate_id] == visited_array_tag)) {
              visited_array[candidate_id] = visited_array_tag;
  
-             float dist = fstdistfunc_(query.data(),
-                                       data_wrapper->nodes[candidate_id].data(),
+            float dist = fstdistfunc_(query,
+                                      data_wrapper->nodes[candidate_id],
                                        dist_func_param_);
  
              num_comparison++;
