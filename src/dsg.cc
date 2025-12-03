@@ -41,10 +41,16 @@ DynamicSegmentGraph::DynamicSegmentGraph(hnswlib::SpaceInterface<DistType> *spac
     if (dist_func_ == nullptr) {
         throw std::runtime_error("DynamicSegmentGraph failed to acquire distance function.");
     }
+    visited_list_pool_ = new hnswlib::VisitedListPool(1, data_wrapper->data_size);
     returned_nns.resize(query_topK);
 }
 
-DynamicSegmentGraph::~DynamicSegmentGraph() = default;
+DynamicSegmentGraph::~DynamicSegmentGraph() {
+    if (visited_list_pool_) {
+        delete visited_list_pool_;
+        visited_list_pool_ = nullptr;
+    }
+}
 
 void DynamicSegmentGraph::build() {
     if (data_wrapper == nullptr || space_ == nullptr) {
@@ -118,29 +124,33 @@ void DynamicSegmentGraph::rangeSearch(const float *query,
     const unsigned right_u = static_cast<unsigned>(right);
     const std::size_t data_size = static_cast<std::size_t>(data_wrapper->data_size);
 
+    hnswlib::VisitedList *vl = visited_list_pool_->getFreeVisitedList();
+    hnswlib::vl_type *visited_array = vl->mass;
+    hnswlib::vl_type visited_array_tag = vl->curV;
+
     auto cmp = [](const Candidate &lhs, const Candidate &rhs) {
         return lhs.first > rhs.first;
     };
     std::priority_queue<Candidate, std::vector<Candidate>, decltype(cmp)> candidate_set(cmp);
     std::priority_queue<Candidate> top_candidates;
-    std::vector<std::uint8_t> visited(data_size, 0);
 
     auto enqueue_seed = [&](unsigned label) {
         if (label < left_u || label > right_u) {
             return;
         }
-        if (visited[label]) {
+        if (visited_array[label] == visited_array_tag) {
             return;
         }
-        visited[label] = 1;
+        visited_array[label] = visited_array_tag;
         const DistType dist =
             dist_func_(query, data_wrapper->nodes.at(label), dist_func_param_);
-        candidate_set.emplace(dist, label);
-        if (top_candidates.size() < query_topK) {
+        
+        if (top_candidates.size() < search_ef || dist < top_candidates.top().first) {
+            candidate_set.emplace(dist, label);
             top_candidates.emplace(dist, label);
-        } else if (!top_candidates.empty() && dist < top_candidates.top().first) {
-            top_candidates.pop();
-            top_candidates.emplace(dist, label);
+            if (top_candidates.size() > search_ef) {
+                top_candidates.pop();
+            }
         }
     };
 
@@ -158,7 +168,7 @@ void DynamicSegmentGraph::rangeSearch(const float *query,
         const auto [dist, current] = candidate_set.top();
         candidate_set.pop();
 
-        if (top_candidates.size() >= query_topK && dist > lower_bound) {
+        if (dist > lower_bound) {
             break;
         }
 
@@ -171,23 +181,28 @@ void DynamicSegmentGraph::rangeSearch(const float *query,
             if (neighbor < left_u || neighbor > right_u) {
                 continue;
             }
-            if (visited[neighbor]) {
+            if (visited_array[neighbor] == visited_array_tag) {
                 continue;
             }
-            visited[neighbor] = 1;
+            visited_array[neighbor] = visited_array_tag;
             const DistType nbr_dist =
                 dist_func_(query, data_wrapper->nodes.at(neighbor), dist_func_param_);
-            candidate_set.emplace(nbr_dist, neighbor);
-            if (top_candidates.size() < query_topK) {
+            
+            if (top_candidates.size() < search_ef || nbr_dist < lower_bound) {
+                candidate_set.emplace(nbr_dist, neighbor);
                 top_candidates.emplace(nbr_dist, neighbor);
-            } else if (nbr_dist < top_candidates.top().first) {
-                top_candidates.pop();
-                top_candidates.emplace(nbr_dist, neighbor);
+                if (top_candidates.size() > search_ef) {
+                    top_candidates.pop();
+                }
+                lower_bound = top_candidates.top().first;
             }
-            lower_bound =
-                top_candidates.empty() ? std::numeric_limits<DistType>::max()
-                                       : top_candidates.top().first;
         }
+    }
+
+    visited_list_pool_->releaseVisitedList(vl);
+
+    while (top_candidates.size() > query_topK) {
+        top_candidates.pop();
     }
 
     std::vector<unsigned> ordered_results;
@@ -414,11 +429,6 @@ void DynamicSegmentGraph::storeForwardEdges(unsigned center_label) {
     auto &edges = forward_edges_.at(center_label);
     edges.clear();
 
-    const auto dataset_right =
-        data_wrapper->data_size > 0
-            ? static_cast<unsigned>(data_wrapper->data_size - 1)
-            : 0;
-
     const std::size_t candidate_count = dfs_scratch_.ordered_candidates.size();
     for (std::size_t idx = 0; idx < candidate_count; ++idx) {
         if (!dfs_scratch_.is_neighbor[idx]) {
@@ -429,27 +439,16 @@ void DynamicSegmentGraph::storeForwardEdges(unsigned center_label) {
             continue;
         }
 
-        const unsigned ll = clampUnsigned(
-            std::min(dfs_scratch_.left_lower[idx], dfs_scratch_.left_upper[idx]),
-            0U, dataset_right);
-        const unsigned lu = clampUnsigned(
-            std::max(dfs_scratch_.left_lower[idx], dfs_scratch_.left_upper[idx]),
-            0U, dataset_right);
-        const unsigned rl = clampUnsigned(
-            std::min(dfs_scratch_.right_lower[idx], dfs_scratch_.right_upper[idx]),
-            0U, dataset_right);
-        const unsigned ru = clampUnsigned(
-            std::max(dfs_scratch_.right_lower[idx], dfs_scratch_.right_upper[idx]),
-            0U, dataset_right);
+        const unsigned ll = dfs_scratch_.left_lower[idx];
+        const unsigned lu = dfs_scratch_.left_upper[idx];
+        const unsigned rl = dfs_scratch_.right_lower[idx];
+        const unsigned ru = dfs_scratch_.right_upper[idx];
 
         if (ll > lu || rl > ru) {
             continue;
         }
 
         edges.emplace_back(neighbor_label, ll, lu, rl, ru);
-        if (edges.size() >= static_cast<std::size_t>(M)) {
-            break;
-        }
     }
 
     std::sort(edges.begin(), edges.end(),

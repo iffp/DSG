@@ -27,8 +27,8 @@ struct BuildConfig {
     int query_num = 1000;
     int query_k = 10;
     unsigned index_k = 16;
-    unsigned ef_construction = 400;
-    unsigned ef_max = 1000;
+    unsigned ef_construction = 100;
+    unsigned ef_max = 400;
     unsigned random_seed = 2025;
     float alpha = 1.0F;
 };

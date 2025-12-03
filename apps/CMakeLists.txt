@@ -8,7 +8,7 @@ function(add_dsg_app TARGET_NAME SOURCE_FILE)
         ${PROJECT_SOURCE_DIR}/src
     )
     target_link_libraries(${TARGET_NAME} PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
-    target_compile_options(${TARGET_NAME} PRIVATE -Wall ${OpenMP_CXX_FLAGS})
+    target_compile_options(${TARGET_NAME} PRIVATE -Wall -march=native -O3 ${OpenMP_CXX_FLAGS})
     target_link_libraries(${TARGET_NAME} PRIVATE ${OpenMP_CXX_FLAGS})
 endfunction()
 

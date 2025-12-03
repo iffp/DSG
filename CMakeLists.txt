@@ -16,8 +16,20 @@ target_include_directories(dsg_core PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(dsg_core PRIVATE UTIL OpenMP::OpenMP_CXX)
-target_compile_options(dsg_core PRIVATE -Wall ${OpenMP_CXX_FLAGS})
+target_compile_options(dsg_core PRIVATE -Wall -march=native -O3 ${OpenMP_CXX_FLAGS})
 
+# -----------------------------------------------------------------------------
+# Release vs Debug Configuration
+# -----------------------------------------------------------------------------
+# By default, dsg_core builds with high optimization (-O3) and native SIMD support (-march=native).
+#
+# To enable Debug mode (with symbols and no optimization), enable the option below:
+#   cmake -B build -DDSG_BUILD_INDEX_DEBUG=ON ...
+#
+# To enable Benchmark executables (e.g. test_hnsw_range), use:
+#   cmake -B build -DBUILD_RANGE_BENCHMARKS=ON ...
+#
+# -----------------------------------------------------------------------------
 option(DSG_BUILD_INDEX_DEBUG "Build a debug-instrumented build_index target" OFF)
 if(DSG_BUILD_INDEX_DEBUG)
     target_compile_options(dsg_core PRIVATE -O0 -g)
@@ -54,4 +66,5 @@ if(BUILD_RANGE_BENCHMARKS)
         ${PROJECT_SOURCE_DIR}/include/utils
     )
     target_link_libraries(test_hnsw_range PRIVATE UTIL)
+    target_compile_options(test_hnsw_range PRIVATE -march=native -O3)
 endif()

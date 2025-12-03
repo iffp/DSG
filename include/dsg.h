@@ -150,6 +150,8 @@ private:
     std::vector<std::vector<SegmentEdge<DistType>>> forward_edges_;
     /// Reusable buffers for DFS compression.
     DfsScratch dfs_scratch_;
+    /// Pool for visited lists
+    hnswlib::VisitedListPool *visited_list_pool_ = nullptr;
 };
 
 } // namespace dsg
