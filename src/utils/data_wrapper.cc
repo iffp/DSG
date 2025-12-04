@@ -226,6 +226,7 @@ void DataWrapper::generateRangeFilteringQueriesAndGroundtruthBenchmark(
     cout << "Ranges: " << endl;
     print_set(query_range_list);
     vector<double> bf_latency_ave(query_range_list.size(), 0.0);
+    const int query_count = static_cast<int>(this->querys.size());
     std::default_random_engine e;
     fs::path base = save_root.empty() ? fs::path("./groundtruth/static")
                                       : fs::path(save_root);
@@ -238,7 +239,7 @@ void DataWrapper::generateRangeFilteringQueriesAndGroundtruthBenchmark(
         range_bounds.resize(this->query_num);
         std::uniform_int_distribution<int> u_lbound(
             0, std::max(this->data_size - window, 0));
-        for (int i = 0; i < this->querys.size(); ++i) {
+        for (int i = 0; i < query_count; ++i) {
             int l_bound = u_lbound(e);
             int r_bound = std::min(this->data_size - 1, l_bound + window - 1);
             range_bounds[i] = {l_bound, r_bound};
@@ -249,7 +250,7 @@ void DataWrapper::generateRangeFilteringQueriesAndGroundtruthBenchmark(
 
         double range_time_acc = 0.0;
 #pragma omp parallel for reduction(+ : range_time_acc) schedule(static)
-        for (int i = 0; i < this->querys.size(); ++i) {
+        for (int i = 0; i < query_count; ++i) {
             const auto bounds = range_bounds[i];
             timeval local_t1, local_t2;
             double greedy_time = 0.0;
@@ -262,7 +263,7 @@ void DataWrapper::generateRangeFilteringQueriesAndGroundtruthBenchmark(
             range_time_acc += greedy_time;
         }
 
-        bf_latency_ave[range_id] = range_time_acc / this->querys.size();
+        bf_latency_ave[range_id] = range_time_acc / static_cast<double>(query_count);
         const auto ratio = kRangeRatios[range_id];
         const auto ranges_file =
             BuildGroundtruthFileName(ratio, this->query_k, this->query_num,
@@ -328,6 +329,8 @@ void DataWrapper::generateIncrementalInsertionGroundtruth(
     query_range_list.emplace_back(this->data_size * 0.32);
     query_range_list.emplace_back(this->data_size * 0.64);
     std::default_random_engine random_engine; // Define the random engine outside
+    const size_t query_count = this->querys.size();
+    const size_t range_bucket_count = query_range_list.size();
 
     struct ResultEntry {
         int query_idx;
@@ -356,17 +359,17 @@ void DataWrapper::generateIncrementalInsertionGroundtruth(
 
         // Generate groundtruth for all queries based on inserted nodes
         vector<vector<int>> part_groundtruth;
-        vector<double> avg_greedy_time(query_range_list.size(), 0.0);
-        vector<ResultEntry> results(query_range_list.size() * this->querys.size());
+        vector<double> avg_greedy_time(range_bucket_count, 0.0);
+        vector<ResultEntry> results(range_bucket_count * query_count);
         timeval t1, t2;
 
-        for (int range_id = 0; range_id < query_range_list.size(); ++range_id) {
-            auto &range = query_range_list[range_id];
+        for (size_t range_id = 0; range_id < range_bucket_count; ++range_id) {
+            const int range = query_range_list[range_id];
             std::uniform_int_distribution<int> u_lbound(0,
                                                          std::max(this->data_size - range, 0));
 
 // #pragma omp parallel for
-            for (int i = 0; i < this->querys.size(); ++i) {
+            for (size_t i = 0; i < query_count; ++i) {
                 int l_bound = u_lbound(random_engine);
                 int r_bound = std::min(this->data_size - 1, l_bound + range - 1);
 
@@ -375,14 +378,16 @@ void DataWrapper::generateIncrementalInsertionGroundtruth(
                 auto gt = scanNearest(inserted_nodes, inserted_keys, this->querys[i], l_bound, r_bound, this->query_k);
                 gettimeofday(&t2, NULL);
                 CountTime(t1, t2, greedy_time);
-                auto result_idx = range_id * this->querys.size() + i;
-                results[result_idx] = ResultEntry{i, l_bound, r_bound, range, r_bound - l_bound + 1, greedy_time, gt};
+                const size_t result_idx = range_id * query_count + i;
+                results[result_idx] = ResultEntry{static_cast<int>(i), l_bound, r_bound, range, r_bound - l_bound + 1, greedy_time, gt};
 // #pragma omp critical
                 {
                     avg_greedy_time[range_id] += greedy_time;
                 }
             }
-            avg_greedy_time[range_id] /= this->querys.size();
+            if (query_count > 0) {
+                avg_greedy_time[range_id] /= static_cast<double>(query_count);
+            }
         }
 
         // Save results to a CSV

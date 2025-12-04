@@ -36,7 +36,7 @@ public:
     // index record
     double index_time = 0.0;
     std::size_t window_count = 0;
-    std::size_t nodes_amount = 0;
+    std::size_t edges_amount = 0;
     float avg_forward_nns = 0.0F;
     float avg_reverse_nns = 0.0F;
 

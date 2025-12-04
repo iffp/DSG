@@ -76,12 +76,10 @@ public:
     }
 
     T *operator[](size_t idx) {
-        assert(idx < count_);
         return storage_.data() + idx * dim_;
     }
 
     const T *operator[](size_t idx) const {
-        assert(idx < count_);
         return storage_.data() + idx * dim_;
     }
 

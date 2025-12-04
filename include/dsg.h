@@ -124,6 +124,11 @@ public:
      */
     void load(const std::string &file_path) override;
 
+    /**
+     * @brief Report index statistics to stdout.
+     */
+    void getStats();
+
 private:
     /// Allocate and build the temporary HNSW used for candidate generation.
     void initializeTemporaryHnsw(size_t ef_limit);

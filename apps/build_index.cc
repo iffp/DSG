@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
         const auto build_end = steady_clock::now();
         const double seconds = duration<double>(build_end - build_start).count();
         std::cout << "[DSG] Build finished in " << seconds << " seconds\n";
-        
+        index.getStats();
         index.save(cfg.index_path);
         std::cout << "[DSG] Index saved to " << cfg.index_path << "\n";
     } catch (const std::invalid_argument &ex) {

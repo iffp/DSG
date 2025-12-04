@@ -5,6 +5,8 @@
  * The DSG first constructs a temporary HNSW, extracts ef_max-sized neighbor
  * lists for every label, compresses them with a DFS-based dominance filter,
  * and finally serves range queries using the stored forward segment edges.
+ * This implementation is based on the paper "Dynamic Segment Graph for Approximate Nearest Neighbor Search" by Zhencan Peng et al.
+ * And previously we use compact_graph.h for arbitrary query and insertion. But now we restructure the code to be more modular and easy to understand.
  */
 
 #include "dsg.h"
@@ -14,16 +16,15 @@
 #include <fstream>
 #include <limits>
 #include <stdexcept>
+#include <iostream>
 
 namespace dsg {
 
 namespace {
 using Clock = std::chrono::steady_clock;
-using Candidate = std::pair<float, unsigned>;
+using Candidate = std::pair<DynamicSegmentGraph::DistType, unsigned>;
 
-inline unsigned clampUnsigned(unsigned value, unsigned lo, unsigned hi) {
-    return std::max(lo, std::min(value, hi));
-}
+
 } // namespace
 
 DynamicSegmentGraph::DynamicSegmentGraph(hnswlib::SpaceInterface<DistType> *space,
@@ -46,6 +47,7 @@ DynamicSegmentGraph::DynamicSegmentGraph(hnswlib::SpaceInterface<DistType> *spac
 }
 
 DynamicSegmentGraph::~DynamicSegmentGraph() {
+    temp_hnsw_.reset();
     if (visited_list_pool_) {
         delete visited_list_pool_;
         visited_list_pool_ = nullptr;
@@ -53,9 +55,6 @@ DynamicSegmentGraph::~DynamicSegmentGraph() {
 }
 
 void DynamicSegmentGraph::build() {
-    if (data_wrapper == nullptr || space_ == nullptr) {
-        throw std::runtime_error("DynamicSegmentGraph::build missing prerequisites.");
-    }
 
     const auto build_start = Clock::now();
 
@@ -77,52 +76,42 @@ void DynamicSegmentGraph::build() {
     std::vector<std::pair<unsigned, DistType>> candidates;
     candidates.reserve(ef_max);
 
+    double total_knn_time = 0.0;
+    double total_dfs_time = 0.0;
+    double total_store_time = 0.0;
+
     for (int label = 0; label < data_wrapper->data_size; ++label) {
+        auto t1 = Clock::now();
         runKnnForLabel(static_cast<unsigned>(label), ef_max, candidates);
+        auto t2 = Clock::now();
         applyDfsCompression(static_cast<unsigned>(label), candidates);
+        auto t3 = Clock::now();
         storeForwardEdges(static_cast<unsigned>(label));
-    }
+        auto t4 = Clock::now();
 
-    temp_hnsw_.reset();
-
-    nodes_amount = 0;
-    for (const auto &edges : forward_edges_) {
-        nodes_amount += edges.size();
+        total_knn_time += std::chrono::duration<double>(t2 - t1).count();
+        total_dfs_time += std::chrono::duration<double>(t3 - t2).count();
+        total_store_time += std::chrono::duration<double>(t4 - t3).count();
     }
-    avg_forward_nns = forward_edges_.empty()
-                          ? 0.0F
-                          : static_cast<float>(nodes_amount) /
-                                static_cast<float>(forward_edges_.size());
-    avg_reverse_nns = 0.0F;
 
     const auto build_end = Clock::now();
     index_time = std::chrono::duration<double>(build_end - build_start).count();
+    
+    std::cout << "[DSG] Detailed breakdown:" << std::endl;
+    std::cout << "  KNN Search: " << total_knn_time << " s" << std::endl;
+    std::cout << "  DFS Compress: " << total_dfs_time << " s" << std::endl;
+    std::cout << "  Store Edges: " << total_store_time << " s" << std::endl;
+
 }
 
 void DynamicSegmentGraph::rangeSearch(const float *query,
                                       const std::pair<int, int> query_bound) {
-    if (data_wrapper == nullptr || query == nullptr) {
-        throw std::invalid_argument("DynamicSegmentGraph::rangeSearch received null inputs.");
-    }
-    if (forward_edges_.empty()) {
-        returned_nns.assign(query_topK, std::numeric_limits<unsigned>::max());
-        return;
-    }
-    if (data_wrapper->data_size <= 0) {
-        returned_nns.assign(query_topK, std::numeric_limits<unsigned>::max());
-        return;
-    }
 
-    const int left = std::max(query_bound.first, 0);
-    const int right = std::min(query_bound.second, data_wrapper->data_size - 1);
-    if (left > right) {
-        returned_nns.assign(query_topK, std::numeric_limits<unsigned>::max());
-        return;
-    }
+    const int left = query_bound.first;
+    const int right = query_bound.second;
 
     const unsigned left_u = static_cast<unsigned>(left);
     const unsigned right_u = static_cast<unsigned>(right);
-    const std::size_t data_size = static_cast<std::size_t>(data_wrapper->data_size);
 
     hnswlib::VisitedList *vl = visited_list_pool_->getFreeVisitedList();
     hnswlib::vl_type *visited_array = vl->mass;
@@ -261,15 +250,34 @@ void DynamicSegmentGraph::load(const std::string &file_path) {
         }
     }
 
-    nodes_amount = 0;
+    edges_amount = 0;
     for (const auto &edges : forward_edges_) {
-        nodes_amount += edges.size();
+        edges_amount += edges.size();
     }
     avg_forward_nns = forward_edges_.empty()
                           ? 0.0F
-                          : static_cast<float>(nodes_amount) /
+                          : static_cast<float>(edges_amount) /
                                 static_cast<float>(forward_edges_.size());
     avg_reverse_nns = 0.0F;
+}
+
+void DynamicSegmentGraph::getStats() {
+    // calculate the average number of forward neighbors
+    edges_amount = 0;
+    for (const auto &edges : forward_edges_) {
+        edges_amount += edges.size();
+    }
+    avg_forward_nns = forward_edges_.empty()
+                          ? 0.0F
+                          : static_cast<float>(edges_amount) /
+                                static_cast<float>(forward_edges_.size());
+    avg_reverse_nns = 0.0F;
+
+    std::cout << "DynamicSegmentGraph Statistics:" << std::endl;
+    std::cout << "  Build Time: " << index_time << " seconds" << std::endl;
+    std::cout << "  Total Edges: " << edges_amount << std::endl;
+    std::cout << "  Avg Forward NNs: " << avg_forward_nns << std::endl;
+    std::cout << "  Avg Reverse NNs: " << avg_reverse_nns << std::endl;
 }
 
 void DynamicSegmentGraph::initializeTemporaryHnsw(size_t ef_limit) {
@@ -277,6 +285,7 @@ void DynamicSegmentGraph::initializeTemporaryHnsw(size_t ef_limit) {
         throw std::runtime_error("DynamicSegmentGraph::initializeTemporaryHnsw missing space.");
     }
     temp_hnsw_ = std::make_unique<HnswType>(space_, data_wrapper->data_size, M, ef_construction, random_seed);
+    // setEF is to set the ef for the search in HNSW
     temp_hnsw_->setEf(ef_limit);
 }
 
@@ -284,12 +293,8 @@ void DynamicSegmentGraph::runKnnForLabel(
     unsigned label,
     size_t ef_limit,
     std::vector<std::pair<unsigned, DistType>> &candidates) {
-    if (!temp_hnsw_) {
-        throw std::runtime_error("DynamicSegmentGraph::runKnnForLabel missing temporary HNSW.");
-    }
     candidates.clear();
-    const void *query = static_cast<const void *>(data_wrapper->nodes.at(label));
-    temp_hnsw_->setEf(ef_limit);
+    const void *query = static_cast<const void *>(data_wrapper->nodes[label]);
     const auto results = temp_hnsw_->searchKnnCloserFirst(query, ef_limit);
     for (const auto &entry : results) {
         const unsigned neighbor_label = static_cast<unsigned>(entry.second);
@@ -298,8 +303,6 @@ void DynamicSegmentGraph::runKnnForLabel(
         }
         candidates.emplace_back(neighbor_label, entry.first);
     }
-    std::sort(candidates.begin(), candidates.end(),
-              [](const auto &lhs, const auto &rhs) { return lhs.second < rhs.second; });
 }
 
 void DynamicSegmentGraph::applyDfsCompression(
@@ -427,7 +430,6 @@ void DynamicSegmentGraph::applyDfsCompression(
 
 void DynamicSegmentGraph::storeForwardEdges(unsigned center_label) {
     auto &edges = forward_edges_.at(center_label);
-    edges.clear();
 
     const std::size_t candidate_count = dfs_scratch_.ordered_candidates.size();
     for (std::size_t idx = 0; idx < candidate_count; ++idx) {
@@ -436,6 +438,7 @@ void DynamicSegmentGraph::storeForwardEdges(unsigned center_label) {
         }
         const unsigned neighbor_label = dfs_scratch_.ordered_candidates[idx].first;
         if (neighbor_label == center_label) {
+            std::cout << "Invalid edge: " << neighbor_label << " " << center_label << std::endl;
             continue;
         }
 
@@ -445,16 +448,12 @@ void DynamicSegmentGraph::storeForwardEdges(unsigned center_label) {
         const unsigned ru = dfs_scratch_.right_upper[idx];
 
         if (ll > lu || rl > ru) {
+            std::cout << "Invalid edge: " << neighbor_label << " " << ll << " " << lu << " " << rl << " " << ru << std::endl;
             continue;
         }
 
         edges.emplace_back(neighbor_label, ll, lu, rl, ru);
     }
-
-    std::sort(edges.begin(), edges.end(),
-              [](const auto &lhs, const auto &rhs) {
-                  return lhs.external_id < rhs.external_id;
-              });
 }
 
 } // namespace dsg

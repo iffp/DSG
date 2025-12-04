@@ -12,6 +12,7 @@
 #pragma once
 
 #include <array>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -37,7 +38,10 @@ public:
         : dataset(dataset_name),   // Dataset name (constant).
           data_size(data_size_),   // Dataset size (constant).
           query_num(num),          // Query count (constant).
-          query_k(k_) {}           // Target top-k (constant).
+          query_k(k_) {            // Target top-k (constant).
+        labels.resize(static_cast<size_t>(data_size));
+        std::iota(labels.begin(), labels.end(), 0U);
+    }
 
     // Dataset name (constant).
     const string dataset;
@@ -53,6 +57,10 @@ public:
     
     // Dimensionality of the dataset vectors.
     size_t data_dim;
+    
+    // Deterministic labels/attributes for each vector (0..data_size-1). Files are
+    // assumed pre-sorted, so label i always maps to nodes[i] without extra I/O.
+    vector<unsigned> labels;
     
     // Stored dataset vectors.
     FlatVectors<float> nodes;

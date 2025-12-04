@@ -68,11 +68,15 @@ size_t greedyNearestInto(const FlatVectors<float> &dpts,
     std::priority_queue<std::pair<float, int>> top_candidates;
     float lower_bound = _INT_MAX;
     const size_t dim = dpts.dim();
-    for (size_t i = l_bound; i <= r_bound; i++) {
-        float dist = EuclideanDistance(query, dpts[i], dim);
-        if (top_candidates.size() < k_smallest || dist < lower_bound) {
-            top_candidates.push(std::make_pair(dist, i));
-            if (top_candidates.size() > k_smallest) {
+    const size_t k_smallest_sz = static_cast<size_t>(k_smallest);
+    const int start = std::max(l_bound, 0);
+    const int end = std::max(start, r_bound);
+    for (int idx = start; idx <= end; ++idx) {
+        const size_t row = static_cast<size_t>(idx);
+        float dist = EuclideanDistance(query, dpts[row], dim);
+        if (top_candidates.size() < k_smallest_sz || dist < lower_bound) {
+            top_candidates.emplace(dist, idx);
+            if (top_candidates.size() > k_smallest_sz) {
                 top_candidates.pop();
             }
 
@@ -96,12 +100,13 @@ vector<int> scanNearest(const FlatVectors<float> &dpts,
     std::priority_queue<std::pair<float, int>> top_candidates;
     float lower_bound = _INT_MAX;
     const size_t dim = dpts.dim();
+    const size_t k_smallest_sz = static_cast<size_t>(k_smallest);
     for (size_t i = 0; i < dpts.size(); i++) {
         if (keys[i] >= l_bound && keys[i] <= r_bound) {
             float dist = EuclideanDistance(query, dpts[i], dim);
-            if (top_candidates.size() < k_smallest || dist < lower_bound) {
+            if (top_candidates.size() < k_smallest_sz || dist < lower_bound) {
                 top_candidates.push(std::make_pair(dist, keys[i]));
-                if (top_candidates.size() > k_smallest) {
+                if (top_candidates.size() > k_smallest_sz) {
                     top_candidates.pop();
                 }
 

@@ -71,7 +71,8 @@ void ReadDataWrapper(std::string &dataset_path,
     ReadBinaryVectors(dataset_path, raw_data, data_size);
     ReadBinaryVectors(query_path, querys, query_size);
 
-    if (raw_data.size() < data_size) {
+    const size_t required_data = static_cast<size_t>(std::max(data_size, 0));
+    if (raw_data.size() < required_data) {
         std::cerr << "Dataset Size not reach " << data_size << " the size: " << raw_data.size() << endl;
     }
 }
@@ -97,7 +98,6 @@ void ReadGroundtruthQuery(vector<vector<int>> &gt,
     string delim = ",";
     string space_delim = " ";
 
-    int numCols = 0;
     infile.open(gt_path, ios::in);
     assert(infile.is_open());
 
