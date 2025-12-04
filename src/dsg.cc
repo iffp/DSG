@@ -23,8 +23,6 @@ namespace dsg {
 namespace {
 using Clock = std::chrono::steady_clock;
 using Candidate = std::pair<DynamicSegmentGraph::DistType, unsigned>;
-
-
 } // namespace
 
 DynamicSegmentGraph::DynamicSegmentGraph(hnswlib::SpaceInterface<DistType> *space,
@@ -295,7 +293,10 @@ void DynamicSegmentGraph::runKnnForLabel(
     std::vector<std::pair<unsigned, DistType>> &candidates) {
     candidates.clear();
     const void *query = static_cast<const void *>(data_wrapper->nodes[label]);
-    const auto results = temp_hnsw_->searchKnnCloserFirst(query, ef_limit);
+    // Use searchKnnCloserFirstReturnAll to get ALL candidates that were ever considered
+    // during the search, not just the top ef results. This provides more candidates
+    // for DFS compression, similar to compact_graph.h's searchBaseLayerLevel0.
+    const auto results = temp_hnsw_->searchKnnCloserFirstReturnAll(query, ef_limit);
     for (const auto &entry : results) {
         const unsigned neighbor_label = static_cast<unsigned>(entry.second);
         if (neighbor_label == label) {
@@ -309,10 +310,6 @@ void DynamicSegmentGraph::applyDfsCompression(
     unsigned center_label,
     std::vector<std::pair<unsigned, DistType>> &candidates) {
     const std::size_t max_neighbors = static_cast<std::size_t>(M);
-    if (max_neighbors == 0 || candidates.empty()) {
-        forward_edges_.at(center_label).clear();
-        return;
-    }
 
     auto &ordered = dfs_scratch_.ordered_candidates;
     ordered.assign(candidates.begin(), candidates.end());
@@ -328,11 +325,6 @@ void DynamicSegmentGraph::applyDfsCompression(
     dfs_scratch_.right_lower.assign(candidate_count, 0);
     dfs_scratch_.right_upper.assign(candidate_count, 0);
     dfs_scratch_.domination_cache.clear();
-
-    if (data_wrapper->data_size <= 0) {
-        forward_edges_.at(center_label).clear();
-        return;
-    }
 
     const unsigned global_left = 0;
     const unsigned global_right =
@@ -368,7 +360,7 @@ void DynamicSegmentGraph::applyDfsCompression(
                         data_wrapper->nodes.at(ordered[prev_idx].first),
                         dist_func_param_);
                     dominated = alpha * pair_dist < candidate_dist;
-                    dfs_scratch_.domination_cache.emplace(key, dominated);
+                    dfs_scratch_.domination_cache[key] = dominated;
                 }
                 if (dominated) {
                     break;
@@ -437,20 +429,10 @@ void DynamicSegmentGraph::storeForwardEdges(unsigned center_label) {
             continue;
         }
         const unsigned neighbor_label = dfs_scratch_.ordered_candidates[idx].first;
-        if (neighbor_label == center_label) {
-            std::cout << "Invalid edge: " << neighbor_label << " " << center_label << std::endl;
-            continue;
-        }
-
         const unsigned ll = dfs_scratch_.left_lower[idx];
         const unsigned lu = dfs_scratch_.left_upper[idx];
         const unsigned rl = dfs_scratch_.right_lower[idx];
         const unsigned ru = dfs_scratch_.right_upper[idx];
-
-        if (ll > lu || rl > ru) {
-            std::cout << "Invalid edge: " << neighbor_label << " " << ll << " " << lu << " " << rl << " " << ru << std::endl;
-            continue;
-        }
 
         edges.emplace_back(neighbor_label, ll, lu, rl, ru);
     }

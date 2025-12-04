@@ -25,7 +25,7 @@ INDEX_PATH="${ROOT_DIR}/index/${DATASET}_N${DATA_SIZE}.index"
 GROUND_ROOT="${ROOT_DIR}/groundtruth/static"
 QUERY_NUM="1000"
 QUERY_K="10"
-SEARCH_EF="200"
+# SEARCH_EF="100"
 
 if [[ ! -f "${INDEX_PATH}" ]]; then
   echo "[DSG] Index file ${INDEX_PATH} not found." >&2
@@ -40,8 +40,8 @@ fi
   -index_path "${INDEX_PATH}" \
   -groundtruth_root "${GROUND_ROOT}" \
   -query_num "${QUERY_NUM}" \
-  -query_k "${QUERY_K}" \
-  -search_ef "${SEARCH_EF}"
+  -query_k "${QUERY_K}" 
+  # -search_ef "${SEARCH_EF}"
 
 
 

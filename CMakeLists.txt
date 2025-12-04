@@ -7,6 +7,30 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenMP REQUIRED)
 
+function(dsg_apply_common_compile_options target)
+    target_compile_options(${target} PRIVATE -Wall)
+
+    if(OpenMP_CXX_FLAGS)
+        target_compile_options(${target} PRIVATE ${OpenMP_CXX_FLAGS})
+    endif()
+
+    target_compile_options(${target} PRIVATE
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Release>:-march=native>
+        $<$<CONFIG:MinSizeRel>:-march=native>
+        $<$<CONFIG:RelWithDebInfo>:-O3>
+        $<$<CONFIG:RelWithDebInfo>:-march=native>
+        $<$<CONFIG:RelWithDebInfo>:-g>
+        $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-fno-omit-frame-pointer>
+        $<$<CONFIG:Debug>:-O0>
+        $<$<CONFIG:Debug>:-g>
+    )
+
+    target_compile_definitions(${target} PRIVATE
+        $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:DSG_DEBUG_BUILD>
+    )
+endfunction()
+
 add_subdirectory(src/utils)
 
 add_library(dsg_core STATIC src/dsg.cc)
@@ -16,14 +40,18 @@ target_include_directories(dsg_core PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(dsg_core PRIVATE UTIL OpenMP::OpenMP_CXX)
-target_compile_options(dsg_core PRIVATE -Wall -march=native -O3 ${OpenMP_CXX_FLAGS})
+dsg_apply_common_compile_options(dsg_core)
 
 # -----------------------------------------------------------------------------
 # Release vs Debug Configuration
 # -----------------------------------------------------------------------------
 # By default, dsg_core builds with high optimization (-O3) and native SIMD support (-march=native).
 #
-# To enable Debug mode (with symbols and no optimization), enable the option below:
+# To configure a Debug build (with symbols and no optimization) simply set:
+#   cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
+#
+# To additionally force debug instrumentation while staying on a non-Debug
+# configuration, enable the option below:
 #   cmake -B build -DDSG_BUILD_INDEX_DEBUG=ON ...
 #
 # To enable Benchmark executables (e.g. test_hnsw_range), use:

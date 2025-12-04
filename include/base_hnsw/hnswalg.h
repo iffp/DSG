@@ -440,6 +440,107 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     }
 
 
+    /**
+     * @brief Search base layer and return ALL candidates that were ever in top_candidates.
+     * 
+     * This function is similar to searchBaseLayerST but keeps track of all candidates
+     * that were ever added to top_candidates (even those later removed due to ef limit).
+     * This provides more candidates for downstream processing like DFS compression.
+     * 
+     * @param ep_id Entry point internal ID
+     * @param data_point Query data point
+     * @param ef Search expansion factor
+     * @return Priority queue containing ALL candidates ever considered (not just top ef)
+     */
+    std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
+    searchBaseLayerSTReturnAll(
+        tableint ep_id,
+        const void *data_point,
+        size_t ef) const {
+        VisitedList *vl = visited_list_pool_->getFreeVisitedList();
+        vl_type *visited_array = vl->mass;
+        vl_type visited_array_tag = vl->curV;
+
+        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
+        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
+        
+        // Store candidates that were removed from top_candidates due to ef limit
+        std::vector<std::pair<dist_t, tableint>> removed_candidates;
+
+        dist_t lowerBound;
+        char* ep_data = getDataByInternalId(ep_id);
+        dist_t dist = fstdistfunc_(data_point, ep_data, dist_func_param_);
+        lowerBound = dist;
+        top_candidates.emplace(dist, ep_id);
+        candidate_set.emplace(-dist, ep_id);
+
+        visited_array[ep_id] = visited_array_tag;
+
+        while (!candidate_set.empty()) {
+            std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
+            dist_t candidate_dist = -current_node_pair.first;
+
+            if (candidate_dist > lowerBound) {
+                break;
+            }
+            candidate_set.pop();
+
+            tableint current_node_id = current_node_pair.second;
+            int *data = (int *) get_linklist0(current_node_id);
+            size_t size = getListCount((linklistsizeint*)data);
+
+#ifdef USE_SSE
+            _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+            _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+            _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+            _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
+#endif
+
+            for (size_t j = 1; j <= size; j++) {
+                int candidate_id = *(data + j);
+#ifdef USE_SSE
+                _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+                _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
+                                _MM_HINT_T0);
+#endif
+                if (!(visited_array[candidate_id] == visited_array_tag)) {
+                    visited_array[candidate_id] = visited_array_tag;
+
+                    char *currObj1 = (getDataByInternalId(candidate_id));
+                    dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+
+                    if (top_candidates.size() < ef || lowerBound > dist) {
+                        candidate_set.emplace(-dist, candidate_id);
+#ifdef USE_SSE
+                        _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                                        offsetLevel0_,
+                                        _MM_HINT_T0);
+#endif
+                        top_candidates.emplace(dist, candidate_id);
+
+                        // When removing due to ef limit, save to removed_candidates instead of discarding
+                        if (top_candidates.size() > ef) {
+                            removed_candidates.emplace_back(top_candidates.top());
+                            top_candidates.pop();
+                        }
+
+                        if (!top_candidates.empty())
+                            lowerBound = top_candidates.top().first;
+                    }
+                }
+            }
+        }
+
+        // Re-add all removed candidates back to top_candidates
+        for (const auto& removed : removed_candidates) {
+            top_candidates.emplace(removed);
+        }
+
+        visited_list_pool_->releaseVisitedList(vl);
+        return top_candidates;
+    }
+
+
     void getNeighborsByHeuristic2(
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         const size_t M) {
@@ -1311,15 +1412,106 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             top_candidates = searchBaseLayerST<false>(
                     currObj, query_data, std::max(ef_, k), isIdAllowed);
         }
-
-        while (top_candidates.size() > k) {
-            top_candidates.pop();
-        }
+        
+        // while (top_candidates.size() > k) {
+        //     top_candidates.pop();
+        // }
         while (top_candidates.size() > 0) {
             std::pair<dist_t, tableint> rez = top_candidates.top();
             result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
             top_candidates.pop();
         }
+        return result;
+    }
+
+
+    /**
+     * @brief Search K nearest neighbors and return ALL candidates that were ever considered.
+     * 
+     * Unlike searchKnn which returns at most ef candidates, this method returns ALL 
+     * candidates that were ever added to the top_candidates set during the search,
+     * including those that were later removed due to the ef limit.
+     * This provides more candidates for downstream processing like DFS compression.
+     * 
+     * @param query_data Query data point
+     * @param k Number of neighbors to search for (used to set ef)
+     * @return Priority queue with ALL candidates (may be larger than ef)
+     */
+    std::priority_queue<std::pair<dist_t, labeltype >>
+    searchKnnReturnAll(const void *query_data, size_t k) const {
+        std::priority_queue<std::pair<dist_t, labeltype >> result;
+        if (cur_element_count == 0) return result;
+
+        tableint currObj = enterpoint_node_;
+        dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
+
+        // Navigate through higher layers to find good entry point for layer 0
+        for (int level = maxlevel_; level > 0; level--) {
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                unsigned int *data;
+
+                data = (unsigned int *) get_linklist(currObj, level);
+                int size = getListCount(data);
+                metric_hops++;
+                metric_distance_computations+=size;
+
+                tableint *datal = (tableint *) (data + 1);
+                for (int i = 0; i < size; i++) {
+                    tableint cand = datal[i];
+                    if (cand < 0 || cand > max_elements_)
+                        throw std::runtime_error("cand error");
+                    dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
+
+                    if (d < curdist) {
+                        curdist = d;
+                        currObj = cand;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Use searchBaseLayerSTReturnAll to get ALL candidates ever considered
+        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
+        top_candidates = searchBaseLayerSTReturnAll(currObj, query_data, std::max(ef_, k));
+        
+        // Convert internal IDs to external labels
+        while (top_candidates.size() > 0) {
+            std::pair<dist_t, tableint> rez = top_candidates.top();
+            result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
+            top_candidates.pop();
+        }
+        return result;
+    }
+
+
+    /**
+     * @brief Search K nearest neighbors returning ALL candidates, sorted from closest to farthest.
+     * 
+     * This is a convenience wrapper around searchKnnReturnAll that returns results
+     * as a vector sorted from closest to farthest (instead of a max-heap).
+     * 
+     * @param query_data Query data point
+     * @param k Number of neighbors to search for (used to set ef)
+     * @return Vector of (distance, label) pairs sorted from closest to farthest
+     */
+    std::vector<std::pair<dist_t, labeltype>>
+    searchKnnCloserFirstReturnAll(const void* query_data, size_t k) const {
+        std::vector<std::pair<dist_t, labeltype>> result;
+
+        // Get all candidates from searchKnnReturnAll (returns max-heap, farthest first)
+        auto ret = searchKnnReturnAll(query_data, k);
+        {
+            size_t sz = ret.size();
+            result.resize(sz);
+            while (!ret.empty()) {
+                result[--sz] = ret.top();
+                ret.pop();
+            }
+        }
+
         return result;
     }
 
