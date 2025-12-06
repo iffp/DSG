@@ -21,8 +21,8 @@ function(dsg_apply_common_compile_options target)
     target_compile_options(${target} PRIVATE
     # These two options looks super important for performance, but I don't know exactly why.
         -msse4.2
-        -fno-tree-vectorize
-        $<$<CONFIG:Release>:-O3>
+        -ftree-vectorize
+        $<$<CONFIG:Release>:-Ofast>
         $<$<CONFIG:Release>:-march=native>
         $<$<CONFIG:MinSizeRel>:-march=native>
         $<$<CONFIG:RelWithDebInfo>:-O3>
