@@ -1,7 +1,7 @@
 // Author: Zhencan Peng, 2025/11/30
 /**
  * @file dsg.h
- * @brief Dynamic Segment Graph (DSG) header.
+ * @brief Dynamic Segment Graph (DSG) header. Rebuilt from compact_graph.h
  * @details This header declares the Dynamic Segment Graph, an implementation that first builds a temporary HNSW,
  *          runs ef_max-sized neighbor searches for every node, applies a DFS-based compression over the neighbors,
  *          and stores only forward segment edges (reverse edges and insertions will be implemented later).
@@ -128,6 +128,10 @@ public:
      * @brief Report index statistics to stdout.
      */
     void getStats();
+    /// Last query hop count.
+    std::size_t last_hop_count() const noexcept { return last_hop_count_; }
+    /// Last query distance evaluation count.
+    std::size_t last_distance_eval_count() const noexcept { return last_distance_eval_count_; }
 
 private:
     /// Allocate and build the temporary HNSW used for candidate generation.
@@ -157,6 +161,10 @@ private:
     DfsScratch dfs_scratch_;
     /// Pool for visited lists
     hnswlib::VisitedListPool *visited_list_pool_ = nullptr;
+    /// Last query hop count.
+    std::size_t last_hop_count_ = 0;
+    /// Last query distance evaluation count.
+    std::size_t last_distance_eval_count_ = 0;
 };
 
 } // namespace dsg

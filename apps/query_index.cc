@@ -178,6 +178,8 @@ int main(int argc, char **argv) {
 
                 double recall_acc = 0.0;
                 double latency_acc = 0.0;
+                double hop_acc = 0.0;
+                double dist_eval_acc = 0.0;
                 size_t evaluated = 0;
 
                 for (size_t query_idx = 0; query_idx < range_bounds.size(); ++query_idx) {
@@ -190,6 +192,8 @@ int main(int argc, char **argv) {
 
                     const auto elapsed = duration<double>(t1 - t0).count();
                     latency_acc += elapsed;
+                    hop_acc += static_cast<double>(index.last_hop_count());
+                    dist_eval_acc += static_cast<double>(index.last_distance_eval_count());
 
                     const int *truth_row = range_truth[query_idx];
                     auto preds = toVector(index.returned_nns, static_cast<size_t>(cfg.query_k));
@@ -204,13 +208,17 @@ int main(int argc, char **argv) {
                 const double avg_recall = recall_acc / static_cast<double>(evaluated);
                 const double avg_latency = latency_acc / static_cast<double>(evaluated);
                 const double qps = latency_acc > 0 ? static_cast<double>(evaluated) / latency_acc : 0.0;
+                const double avg_hops = hop_acc / static_cast<double>(evaluated);
+                const double avg_dist_calcs = dist_eval_acc / static_cast<double>(evaluated);
 
                 std::cout << std::fixed << std::setprecision(4);
                 std::cout << "[search_ef " << search_ef_value << "] "
                           << "[Range ratio " << DataWrapper::kRangeRatios[range_id] * 100 << "%] "
                           << "Recall=" << avg_recall << " "
                           << "Latency=" << avg_latency * 1e3 << " ms "
-                          << "QPS=" << qps << std::endl;
+                          << "QPS=" << qps << " "
+                          << "AvgHops=" << avg_hops << " "
+                          << "AvgDistCalcs=" << avg_dist_calcs << std::endl;
             }
             std::cout << std::endl;
         }

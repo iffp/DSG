@@ -24,7 +24,7 @@ QUERY_PATH="${ROOT_DIR}/data/deep_query.bin"
 INDEX_PATH="${ROOT_DIR}/index/${DATASET}_N${DATA_SIZE}.index"
 INDEX_K="16"
 EF_CONSTRUCTION="100"
-EF_MAX="400"
+EF_MAX="200"
 ALPHA="1.0"
 
 mkdir -p "$(dirname "${INDEX_PATH}")"

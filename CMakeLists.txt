@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenMP REQUIRED)
 
+# Allow opting into -O3/-march=native even for Debug builds (useful for
+# profiling fast paths while keeping symbols).
+option(DSG_DEBUG_OPTIMIZED "Enable -O3/-march=native for Debug configuration" ON)
+
 function(dsg_apply_common_compile_options target)
     target_compile_options(${target} PRIVATE -Wall)
 
@@ -15,6 +19,8 @@ function(dsg_apply_common_compile_options target)
     endif()
 
     target_compile_options(${target} PRIVATE
+        -msse4.2
+        -fno-tree-vectorize
         $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:Release>:-march=native>
         $<$<CONFIG:MinSizeRel>:-march=native>
@@ -22,7 +28,9 @@ function(dsg_apply_common_compile_options target)
         $<$<CONFIG:RelWithDebInfo>:-march=native>
         $<$<CONFIG:RelWithDebInfo>:-g>
         $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:-fno-omit-frame-pointer>
-        $<$<CONFIG:Debug>:-O0>
+        $<$<AND:$<CONFIG:Debug>,$<NOT:$<BOOL:${DSG_DEBUG_OPTIMIZED}>>>:-O0>
+        $<$<AND:$<CONFIG:Debug>,$<BOOL:${DSG_DEBUG_OPTIMIZED}>>:-O3>
+        $<$<AND:$<CONFIG:Debug>,$<BOOL:${DSG_DEBUG_OPTIMIZED}>>:-march=native>
         $<$<CONFIG:Debug>:-g>
     )
 
@@ -63,7 +71,6 @@ if(DSG_BUILD_INDEX_DEBUG)
     target_compile_options(dsg_core PRIVATE -O0 -g)
     target_compile_definitions(dsg_core PRIVATE DSG_DEBUG_BUILD)
 endif()
-
 add_subdirectory(apps)
 
 option(BUILD_RANGE_BENCHMARKS "Build range benchmark executables under tests/" OFF)
