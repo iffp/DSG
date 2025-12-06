@@ -19,6 +19,7 @@ function(dsg_apply_common_compile_options target)
     endif()
 
     target_compile_options(${target} PRIVATE
+    # These two options looks super important for performance, but I don't know exactly why.
         -msse4.2
         -fno-tree-vectorize
         $<$<CONFIG:Release>:-O3>

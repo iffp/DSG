@@ -9,7 +9,6 @@ function(add_dsg_app TARGET_NAME SOURCE_FILE)
     )
     target_link_libraries(${TARGET_NAME} PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
     dsg_apply_common_compile_options(${TARGET_NAME})
-    target_link_libraries(${TARGET_NAME} PRIVATE ${OpenMP_CXX_FLAGS})
 endfunction()
 
 add_dsg_app(generate_groundtruth generate_groundtruth.cc)
