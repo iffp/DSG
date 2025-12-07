@@ -30,41 +30,6 @@ namespace dsg {
 using hnswlib::tableint;
 
 /**
- * @brief A compressed forward edge that captures the valid segment ranges.
- */
-template <typename dist_t>
-struct SegmentEdge {
-    /// Neighbor's external label.
-    unsigned external_id = 0;
-    /// Inclusive smallest valid left boundary.
-    unsigned left_lower = 0;
-    /// Inclusive largest valid left boundary.
-    unsigned left_upper = 0;
-    /// Inclusive smallest valid right boundary.
-    unsigned right_lower = 0;
-    /// Inclusive largest valid right boundary.
-    unsigned right_upper = 0;
-
-    SegmentEdge() = default;
-    SegmentEdge(unsigned id,
-                unsigned ll,
-                unsigned lr,
-                unsigned rl,
-                unsigned rr) :
-        external_id(id),
-        left_lower(ll),
-        left_upper(lr),
-        right_lower(rl),
-        right_upper(rr) {
-    }
-
-    bool coversRange(unsigned query_left, unsigned query_right) const noexcept {
-        return (left_lower <= query_left && query_left <= left_upper) &&
-               (right_lower <= query_right && query_right <= right_upper);
-    }
-};
-
-/**
  * @brief Scratchpad buffers reused during DFS.
  */
 struct DfsScratch {
@@ -83,7 +48,9 @@ struct DfsScratch {
     /// Per-candidate right-upper boundary.
     std::vector<unsigned> right_upper;
     /// Cache of domination checks between candidate pairs.
-    std::unordered_map<std::uint64_t, bool> domination_cache;
+    /// Uses a flattened 2D grid (row-major): index = prev_idx * num_candidates + curr_idx.
+    /// 0: unknown, 1: dominated, 2: not dominated.
+    std::vector<uint8_t> domination_grid;
 };
 
 /**
@@ -102,6 +69,7 @@ public:
     /**
      * @brief Release the temporary HNSW and any scratch buffers.
      */
+    DynamicSegmentGraph() = default;
     ~DynamicSegmentGraph() override;
 
     /**
@@ -144,8 +112,13 @@ private:
     void applyDfsCompression(unsigned center_label,
                              std::vector<std::pair<unsigned, DistType>> &candidates);
     /// Move the compressed neighbors from scratch buffers into forward_edges_.
-    void storeForwardEdges(unsigned center_label);
-
+    // Note: The signature of storeForwardEdges might change in implementation to adapt to SoA,
+    // or we might accumulate in a temporary buffer first.
+    // Since we are refactoring to SoA, we'll use a temporary structure in build() 
+    // and then populate the member vectors.
+    // We keep this declaration as a helper if needed, or remove it if the logic moves to build().
+    // For now, let's assume we'll handle storage logic inside build() or a helper.
+    
 private:
     /// Distance space used to construct the temporary HNSW.
     hnswlib::SpaceInterface<DistType> *space_ = nullptr;
@@ -155,8 +128,18 @@ private:
     hnswlib::DISTFUNC<DistType> dist_func_ = nullptr;
     /// Parameter blob forwarded to the distance function.
     void *dist_func_param_ = nullptr;
-    /// Compressed forward edges for every label.
-    std::vector<std::vector<SegmentEdge<DistType>>> forward_edges_;
+
+    // SoA (Structure of Arrays) storage for the graph.
+    // CSR-like structure: row_offset_ points to the start of edges for each node.
+    std::vector<std::size_t> row_offset_;
+    
+    // Flat arrays for edge properties.
+    std::vector<unsigned> neighbors_;     // external_id
+    std::vector<unsigned> left_lower_;
+    std::vector<unsigned> left_upper_;
+    std::vector<unsigned> right_lower_;
+    std::vector<unsigned> right_upper_;
+
     /// Reusable buffers for DFS compression.
     DfsScratch dfs_scratch_;
     /// Pool for visited lists
@@ -168,4 +151,3 @@ private:
 };
 
 } // namespace dsg
-
