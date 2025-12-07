@@ -307,6 +307,11 @@ void DynamicSegmentGraph::rangeSearch(const float *query,
     };
 
     const unsigned range_span = right_u - left_u + 1;
+    constexpr double kSmallRangeFrac = 0.02;
+    // Small optimization: if the query span is tiny, skip envelope checks and
+    // admit neighbors inside [left_u, right_u] to avoid over-pruning sparse ranges.
+    const bool skip_range_envelope =
+        static_cast<double>(range_span) < kSmallRangeFrac * static_cast<double>(data_wrapper->data_size);
     enqueue_seed(left_u);
     enqueue_seed(left_u + range_span / 2);
     enqueue_seed(left_u + range_span / 4);
@@ -357,76 +362,80 @@ void DynamicSegmentGraph::rangeSearch(const float *query,
 
         // SIMD Loop: process 4 elements at a time
         // Adjust loop start to current_scan_idx instead of start_idx
-        for (; current_scan_idx + 4 <= end_idx; current_scan_idx += 4) {
-            // Prefetch ahead (16 elements ahead = 64 bytes)
-            _mm_prefetch(reinterpret_cast<const char*>(neighbors_ptr + current_scan_idx + 16), _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<const char*>(ll_ptr + current_scan_idx + 16), _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<const char*>(lu_ptr + current_scan_idx + 16), _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<const char*>(rl_ptr + current_scan_idx + 16), _MM_HINT_T0);
-            _mm_prefetch(reinterpret_cast<const char*>(ru_ptr + current_scan_idx + 16), _MM_HINT_T0);
-
-            // Load neighbors
-            __m128i v_nbr = _mm_loadu_si128(reinterpret_cast<const __m128i*>(neighbors_ptr + current_scan_idx));
-
-            // Check if any neighbor > right_u (break condition)
-            // Unsigned comparison trick: (a ^ sign) > (b ^ sign)
-            __m128i v_nbr_adj = _mm_xor_si128(v_nbr, sign_bit);
-            __m128i v_break_cmp = _mm_cmpgt_epi32(v_nbr_adj, v_right_u_adj);
-            
-            // If any bit is set in v_break_cmp, it means at least one neighbor > right_u
-            if (_mm_movemask_ps(_mm_castsi128_ps(v_break_cmp)) != 0) {
-                break; // Fallback to scalar to handle the break point accurately
-            }
-
-            // Load range attributes
-            __m128i v_ll = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ll_ptr + current_scan_idx));
-            __m128i v_lu = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lu_ptr + current_scan_idx));
-            __m128i v_rl = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rl_ptr + current_scan_idx));
-            __m128i v_ru = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ru_ptr + current_scan_idx));
-
-            // Adjust for unsigned comparison
-            v_ll = _mm_xor_si128(v_ll, sign_bit);
-            v_lu = _mm_xor_si128(v_lu, sign_bit);
-            v_rl = _mm_xor_si128(v_rl, sign_bit);
-            v_ru = _mm_xor_si128(v_ru, sign_bit);
-
-            // Check conditions:
-            // 1. neighbor >= left_u is guaranteed by lower_bound
-
-            // 2. left_lower <= left_u  => !(left_lower > left_u) => !(v_ll > v_left_u_adj)
-            __m128i c1_fail = _mm_cmpgt_epi32(v_ll, v_left_u_adj);
-
-            // 3. left_u <= left_upper  => !(left_u > left_upper) => !(v_left_u_adj > v_lu)
-            __m128i c2_fail = _mm_cmpgt_epi32(v_left_u_adj, v_lu);
-
-            // 4. right_lower <= right_u => !(right_lower > right_u) => !(v_rl > v_right_u_adj)
-            __m128i c3_fail = _mm_cmpgt_epi32(v_rl, v_right_u_adj);
-
-            // 5. right_u <= right_upper => !(right_u > right_upper) => !(v_right_u_adj > v_ru)
-            __m128i c4_fail = _mm_cmpgt_epi32(v_right_u_adj, v_ru);
-
-            // Combine failures
-            __m128i any_fail = _mm_or_si128(c1_fail, c2_fail);
-            any_fail = _mm_or_si128(any_fail, _mm_or_si128(c3_fail, c4_fail));
-
-            // mask = 1 where valid (any_fail is 0)
-            int fail_mask = _mm_movemask_ps(_mm_castsi128_ps(any_fail));
-            int valid_mask = (~fail_mask) & 0xF;
-
-            while (valid_mask) {
-                int bit = __builtin_ctz(valid_mask);
-                unsigned neighbor = neighbors_ptr[current_scan_idx + bit];
+        if (!skip_range_envelope) {
+            for (; current_scan_idx + 4 <= end_idx; current_scan_idx += 4) {
+                // Prefetch ahead (16 elements ahead = 64 bytes)
+                _mm_prefetch(reinterpret_cast<const char*>(neighbors_ptr + current_scan_idx + 16), _MM_HINT_T0);
                 
-                // Check visited status
-                if (visited_array[neighbor] != visited_array_tag) {
-                    fetched_nns.push_back(neighbor);
-                    _mm_prefetch(reinterpret_cast<const char*>(data_wrapper->nodes[neighbor]), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(ll_ptr + current_scan_idx + 16), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(lu_ptr + current_scan_idx + 16), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(rl_ptr + current_scan_idx + 16), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(ru_ptr + current_scan_idx + 16), _MM_HINT_T0);
+                
+
+                // Load neighbors
+                __m128i v_nbr = _mm_loadu_si128(reinterpret_cast<const __m128i*>(neighbors_ptr + current_scan_idx));
+
+                // Check if any neighbor > right_u (break condition)
+                // Unsigned comparison trick: (a ^ sign) > (b ^ sign)
+                __m128i v_nbr_adj = _mm_xor_si128(v_nbr, sign_bit);
+                __m128i v_break_cmp = _mm_cmpgt_epi32(v_nbr_adj, v_right_u_adj);
+                
+                // If any bit is set in v_break_cmp, it means at least one neighbor > right_u
+                if (_mm_movemask_ps(_mm_castsi128_ps(v_break_cmp)) != 0) {
+                    break; // Fallback to scalar to handle the break point accurately
                 }
-                
-                valid_mask &= (valid_mask - 1);
-            }
-        }
 
+                // Load range attributes
+                __m128i v_ll = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ll_ptr + current_scan_idx));
+                __m128i v_lu = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lu_ptr + current_scan_idx));
+                __m128i v_rl = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rl_ptr + current_scan_idx));
+                __m128i v_ru = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ru_ptr + current_scan_idx));
+
+                    // Adjust for unsigned comparison
+                    v_ll = _mm_xor_si128(v_ll, sign_bit);
+                    v_lu = _mm_xor_si128(v_lu, sign_bit);
+                    v_rl = _mm_xor_si128(v_rl, sign_bit);
+                    v_ru = _mm_xor_si128(v_ru, sign_bit);
+
+                    // Check conditions:
+                    // 1. neighbor >= left_u is guaranteed by lower_bound
+
+                    // 2. left_lower <= left_u  => !(left_lower > left_u) => !(v_ll > v_left_u_adj)
+                    __m128i c1_fail = _mm_cmpgt_epi32(v_ll, v_left_u_adj);
+
+                    // 3. left_u <= left_upper  => !(left_u > left_upper) => !(v_left_u_adj > v_lu)
+                    __m128i c2_fail = _mm_cmpgt_epi32(v_left_u_adj, v_lu);
+
+                    // 4. right_lower <= right_u => !(right_lower > right_u) => !(v_rl > v_right_u_adj)
+                    __m128i c3_fail = _mm_cmpgt_epi32(v_rl, v_right_u_adj);
+
+                    // 5. right_u <= right_upper => !(right_u > right_upper) => !(v_right_u_adj > v_ru)
+                    __m128i c4_fail = _mm_cmpgt_epi32(v_right_u_adj, v_ru);
+
+                    // Combine failures
+                    __m128i any_fail = _mm_or_si128(c1_fail, c2_fail);
+                    any_fail = _mm_or_si128(any_fail, _mm_or_si128(c3_fail, c4_fail));
+
+                // mask = 1 where valid (any_fail is 0)
+                int fail_mask = _mm_movemask_ps(_mm_castsi128_ps(any_fail));
+                int valid_mask = (~fail_mask) & 0xF;
+
+                while (valid_mask) {
+                    int bit = __builtin_ctz(valid_mask);
+                    unsigned neighbor = neighbors_ptr[current_scan_idx + bit];
+                    
+                    // Check visited status
+                    if (visited_array[neighbor] != visited_array_tag) {
+                        fetched_nns.push_back(neighbor);
+                        _mm_prefetch(reinterpret_cast<const char*>(data_wrapper->nodes[neighbor]), _MM_HINT_T0);
+                    }
+                    
+                    valid_mask &= (valid_mask - 1);
+                }
+            }
+
+        }
         // Scalar Loop for remaining items or after break
         for (; current_scan_idx < end_idx; ++current_scan_idx) {
             const unsigned neighbor = neighbors_ptr[current_scan_idx];
@@ -436,10 +445,11 @@ void DynamicSegmentGraph::rangeSearch(const float *query,
                 break;
             }
 
-            // Coverage check
-            if (!((ll_ptr[current_scan_idx] <= left_u && left_u <= lu_ptr[current_scan_idx]) &&
-                  (rl_ptr[current_scan_idx] <= right_u && right_u <= ru_ptr[current_scan_idx]))) {
-                continue;
+            if (!skip_range_envelope) {
+                if (!((ll_ptr[current_scan_idx] <= left_u && left_u <= lu_ptr[current_scan_idx]) &&
+                      (rl_ptr[current_scan_idx] <= right_u && right_u <= ru_ptr[current_scan_idx]))) {
+                    continue;
+                }
             }
             
             if (visited_array[neighbor] == visited_array_tag) {
@@ -539,6 +549,19 @@ void DynamicSegmentGraph::load(const std::string &file_path) {
         in.read(reinterpret_cast<char *>(right_lower_.data()), num_edges * sizeof(unsigned));
         in.read(reinterpret_cast<char *>(right_upper_.data()), num_edges * sizeof(unsigned));
     }
+
+    // Report index-only memory footprint (exclude raw vector storage).
+    const std::size_t offset_bytes = row_offset_.capacity() * sizeof(std::size_t);
+    const std::size_t neighbor_arrays_bytes =
+        neighbors_.capacity() * sizeof(unsigned) +
+        left_lower_.capacity() * sizeof(unsigned) +
+        left_upper_.capacity() * sizeof(unsigned) +
+        right_lower_.capacity() * sizeof(unsigned) +
+        right_upper_.capacity() * sizeof(unsigned);
+    const std::size_t index_bytes = offset_bytes + neighbor_arrays_bytes;
+    const double index_mib = static_cast<double>(index_bytes) / (1024.0 * 1024.0);
+    std::cout << "[DSG] Index memory footprint (excluding vectors): "
+              << index_mib << " MiB (" << index_bytes << " bytes)" << std::endl;
 
     edges_amount = num_edges;
     avg_forward_nns = (row_offset_.empty() || node_count == 0)
