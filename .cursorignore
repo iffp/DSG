@@ -1,0 +1,15 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+build
+test.dSYM
+data
+groundtruth
+.venv
+__pycache__
+*.zip
+.DS_Store
+*.bin
+*.log
+*.json
+*.pkl
+res_process
+*.query
