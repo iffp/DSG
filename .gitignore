@@ -16,3 +16,5 @@ __pycache__
 *.pkl
 res_process
 extracted_release_version
+callgrind.out.*
+test_hnsw_range

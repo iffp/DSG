@@ -4,11 +4,22 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
 BIN="${BUILD_DIR}/test_hnsw_range"
+SRC_DIR="${ROOT_DIR}/src"
+INCLUDE_DIR="${ROOT_DIR}/include"
 
+# Recompile locally with g++ if requested or missing.
 if [[ ! -x "${BIN}" ]]; then
-  echo "Binary not found, building..."
-  cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" -DBUILD_RANGE_BENCHMARKS=ON
-  cmake --build "${BUILD_DIR}" --target test_hnsw_range
+  mkdir -p "${BUILD_DIR}"
+  echo "Compiling test_hnsw_range with g++ (standalone)..."
+  g++ -std=c++17 -O3 -march=native -fopenmp -msse4.2 \
+    -I"${INCLUDE_DIR}" \
+    -I"${INCLUDE_DIR}/utils" \
+    -I"${ROOT_DIR}/src" \
+    "${ROOT_DIR}/tests/test_hnsw_range.cpp" \
+    "${SRC_DIR}/utils/data_wrapper.cc" \
+    "${SRC_DIR}/utils/reader.cc" \
+    "${SRC_DIR}/utils/utils.cc" \
+    -o "${BIN}"
 fi
 
 DATASET="deep"

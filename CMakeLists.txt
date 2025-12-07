@@ -94,13 +94,4 @@ if(BUILD_RANGE_BENCHMARKS)
         tests/test_l2_benchmark.cpp
     )
 
-    add_executable(test_hnsw_range
-        tests/test_hnsw_range.cpp
-    )
-    target_include_directories(test_hnsw_range PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/include/utils
-    )
-    target_link_libraries(test_hnsw_range PRIVATE UTIL)
-    target_compile_options(test_hnsw_range PRIVATE -march=native -O3)
 endif()
