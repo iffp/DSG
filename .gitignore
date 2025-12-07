@@ -18,3 +18,5 @@ res_process
 extracted_release_version
 callgrind.out.*
 test_hnsw_range
+scripts/run_test_hnsw_range.sh
+tests/test_hnsw_range.cpp
