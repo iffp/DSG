@@ -11,14 +11,6 @@ __pycache__
 *.zip
 .DS_Store
 *.bin
-<<<<<<< HEAD
-test
-*.log
-unittest
-test
-script
-index
-=======
 *.log
 *.json
 *.pkl
@@ -28,4 +20,3 @@ callgrind.out.*
 test_hnsw_range
 scripts/run_test_hnsw_range.sh
 tests/test_hnsw_range.cpp
->>>>>>> exploreBetterQPS
