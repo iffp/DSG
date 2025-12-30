@@ -1,6 +1,6 @@
 # Dynamic Segment Graph (DSG)
 
-This repository hosts a rebuilt implementation of Dynamic Segment Graph for range-filtered approximate nearest neighbor search. The previous repo was removed to clear redundant history; this one stays lean while we iterate. If anything is unclear, feel free to ask questions or suggest improvements.
+This repository hosts a rebuilt implementation of **Dynamic Segment Graph (DSG)** for range-filtered approximate nearest neighbor search. This work is the follow-up to [SeRF](https://github.com/rutgers-db/SeRF) (Segment Graph for Range-Filtering but not supporting random insertion), also developed at the Rutgers Database Lab (**RuDB**).
 
 ## Status & Roadmap
 - Static build + load: done (DFS compression, CSR storage).
