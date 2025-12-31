@@ -59,7 +59,7 @@ import re
 import warnings
 from typing import Dict, List, Optional, Sequence, Tuple
 
-RECALL_X_MIN: float = 0.8
+RECALL_X_MIN: float = 0.95
 RECALL_X_MAX: float = 1.0
 DEFAULT_DATASET: str = "deep"
 DEFAULT_TASK_SUBDIR: str = "search"

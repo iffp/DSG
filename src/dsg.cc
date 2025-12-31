@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <limits>
 #include <unordered_set>
@@ -41,6 +42,36 @@ struct TempEdge {
                (right_lower <= query_right && query_right <= right_upper);
     }
 };
+
+// Support heuristic for an edge (center -> v) under the full space of query ranges.
+// A query range [L, R] can use this edge only if:
+//   - L in [ll, lu]
+//   - R in [rl, ru]
+//   - L <= v <= R   (because adjacency is scanned only for neighbor ids in [L, R])
+//
+// The support is the number of (L, R) pairs satisfying these constraints:
+//   support = |{L}| * |{R}|
+static inline std::uint64_t EdgeSupport(unsigned v,
+                                       unsigned ll,
+                                       unsigned lu,
+                                       unsigned rl,
+                                       unsigned ru) noexcept {
+    if (ll > lu || rl > ru) {
+        return 0;
+    }
+    const unsigned l_hi = std::min(lu, v);
+    if (ll > l_hi) {
+        return 0;
+    }
+    const std::uint64_t count_L = static_cast<std::uint64_t>(l_hi - ll + 1);
+
+    const unsigned r_lo = std::max(rl, v);
+    if (r_lo > ru) {
+        return 0;
+    }
+    const std::uint64_t count_R = static_cast<std::uint64_t>(ru - r_lo + 1);
+    return count_L * count_R;
+}
 
 } // namespace
 
@@ -228,6 +259,121 @@ void DynamicSegmentGraph::build() {
         edges.insert(edges.end(), rev.begin(), rev.end());
         merge_edges_func(edges);
     }
+
+    // ---------------------------------------------------------------------
+    // Build-time support pruning (bottom 10% support per node).
+    //
+    // Motivation:
+    // - Very low-support edges correspond to tiny (L, R) eligibility regions.
+    // - These edges rarely contribute across the full query-range space.
+    //
+    // Small-range guard:
+    // - `rangeSearch()` skips envelope checks when range_span < 0.02 * N.
+    // - For such tiny ranges, useful edges tend to connect labels close to the
+    //   current node (center_label). To avoid harming this regime, we never prune
+    //   edges whose neighbor label lies within +/- ceil(0.02 * N) around center_label.
+    // ---------------------------------------------------------------------
+    const auto prune_start = Clock::now();
+    const std::size_t protect_span = (node_count + 49) / 50; // ceil(0.02 * N) = ceil(N / 50)
+    std::size_t edges_before_prune = 0;
+    std::size_t edges_after_prune = 0;
+    std::size_t pruned_edges = 0;
+    std::size_t protected_edges = 0;
+
+    std::vector<std::uint64_t> supports_all;
+    std::vector<std::uint64_t> prunable_supports;
+    std::vector<TempEdge> kept_edges;
+
+    const std::uint64_t kProtectedSentinel =
+        std::numeric_limits<std::uint64_t>::max();
+
+    for (std::size_t center_label = 0; center_label < node_count; ++center_label) {
+        auto &edges = temp_adj[center_label];
+        edges_before_prune += edges.size();
+        if (edges.empty()) {
+            continue;
+        }
+
+        supports_all.resize(edges.size());
+        prunable_supports.clear();
+        prunable_supports.reserve(edges.size());
+
+        for (std::size_t i = 0; i < edges.size(); ++i) {
+            const auto &edge = edges[i];
+            const std::size_t neighbor = static_cast<std::size_t>(edge.external_id);
+            const std::size_t diff =
+                neighbor > center_label ? (neighbor - center_label)
+                                        : (center_label - neighbor);
+            if (diff <= protect_span) {
+                supports_all[i] = kProtectedSentinel;
+                ++protected_edges;
+                continue;
+            }
+
+            const std::uint64_t support = EdgeSupport(edge.external_id,
+                                                      edge.left_lower,
+                                                      edge.left_upper,
+                                                      edge.right_lower,
+                                                      edge.right_upper);
+            supports_all[i] = support;
+            prunable_supports.push_back(support);
+        }
+
+        const std::size_t prunable_count = prunable_supports.size();
+        const std::size_t prune_count = prunable_count / 10;
+        if (prune_count == 0) {
+            edges_after_prune += edges.size();
+            continue;
+        }
+
+        const std::size_t kth = prune_count - 1;
+        std::nth_element(prunable_supports.begin(),
+                         prunable_supports.begin() + kth,
+                         prunable_supports.end());
+        const std::uint64_t cutoff = prunable_supports[kth];
+
+        kept_edges.clear();
+        kept_edges.reserve(edges.size());
+        for (std::size_t i = 0; i < edges.size(); ++i) {
+            const auto &edge = edges[i];
+            const std::uint64_t support = supports_all[i];
+            if (support == kProtectedSentinel) {
+                kept_edges.push_back(edge);
+                continue;
+            }
+            if (support <= cutoff) {
+                ++pruned_edges;
+                continue;
+            }
+            kept_edges.push_back(edge);
+        }
+        edges.swap(kept_edges);
+        edges_after_prune += edges.size();
+    }
+
+    // If we skipped pruning for some nodes (e.g. prune_count==0), edges_after_prune
+    // already includes their original degree. For nodes that were empty, we added 0.
+    // For nodes pruned, edges_after_prune was added after pruning.
+    if (edges_after_prune == 0) {
+        for (const auto &edges : temp_adj) {
+            edges_after_prune += edges.size();
+        }
+    }
+
+    const auto prune_end = Clock::now();
+    const double prune_time_s =
+        std::chrono::duration<double>(prune_end - prune_start).count();
+    const double prune_frac = edges_before_prune == 0
+                                  ? 0.0
+                                  : static_cast<double>(pruned_edges) /
+                                        static_cast<double>(edges_before_prune);
+
+    std::cout << "[DSG] Build-time support prune (per node, bottom 10% of prunable edges): "
+              << "pruned=" << pruned_edges << "/" << edges_before_prune
+              << " (" << prune_frac * 100.0 << "%), "
+              << "protected_edges=" << protected_edges
+              << " (|nbr-center| <= " << protect_span << "), "
+              << "time=" << prune_time_s << " s" << std::endl;
 
     // Now flatten temp_adj into SoA members
     row_offset_.resize(node_count + 1);
@@ -605,6 +751,7 @@ void DynamicSegmentGraph::runKnnForLabel(
     // during the search, not just the top ef results. This provides more candidates
     // for DFS compression, similar to compact_graph.h's searchBaseLayerLevel0.
     const auto results = temp_hnsw_->searchKnnCloserFirstReturnAll(query, ef_limit);
+    candidates.reserve(results.size());
     for (const auto &entry : results) {
         const unsigned neighbor_label = static_cast<unsigned>(entry.second);
         if (neighbor_label == label) {
@@ -618,6 +765,10 @@ void DynamicSegmentGraph::applyDfsCompression(
     unsigned center_label,
     std::vector<std::pair<unsigned, DistType>> &candidates) {
     const std::size_t max_neighbors = static_cast<std::size_t>(M);
+    const auto &nodes = data_wrapper->nodes;
+    const float *const nodes_base = nodes.data();
+    const std::size_t nodes_dim = nodes.dim();
+    const DistType inv_alpha = static_cast<DistType>(1.0f / alpha);
 
     auto &ordered = dfs_scratch_.ordered_candidates;
     ordered.assign(candidates.begin(), candidates.end());
@@ -658,9 +809,13 @@ void DynamicSegmentGraph::applyDfsCompression(
         for (unsigned idx = start_idx; idx < candidate_count; ++idx) {
             const unsigned candidate_label = ordered[idx].first;
             const DistType candidate_dist = ordered[idx].second;
+            const DistType dom_threshold = candidate_dist * inv_alpha;
             if (candidate_label < L || candidate_label > R) {
                 continue;
             }
+
+            const float *const cand_vec =
+                nodes_base + static_cast<std::size_t>(candidate_label) * nodes_dim;
 
             bool dominated = false;
             for (unsigned prev_idx : prefix) {
@@ -671,11 +826,14 @@ void DynamicSegmentGraph::applyDfsCompression(
                 if (status != 0) {
                     dominated = (status == 1);
                 } else {
+                    const unsigned prev_label = ordered[prev_idx].first;
+                    const float *const prev_vec =
+                        nodes_base + static_cast<std::size_t>(prev_label) * nodes_dim;
                     const DistType pair_dist = dist_func_(
-                        data_wrapper->nodes.at(candidate_label),
-                        data_wrapper->nodes.at(ordered[prev_idx].first),
+                        cand_vec,
+                        prev_vec,
                         dist_func_param_);
-                    dominated = alpha * pair_dist < candidate_dist;
+                    dominated = pair_dist < dom_threshold;
                     dfs_scratch_.domination_grid[grid_idx] = dominated ? 1 : 2;
                 }
                 
