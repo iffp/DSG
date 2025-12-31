@@ -3,9 +3,14 @@
 """
 Plot Recall–QPS Curves (7 Range Buckets) from Benchmark Logs.
 
-This script scans the repository `logs/` folder for log files produced by
-`scripts/run_query_index.sh` (which runs `apps/query_index.cc`). It extracts
-per-range (Recall, QPS) points and draws a single figure with 7 subplots:
+This script scans the repository logs for `query_index` results and draws a
+single figure with 7 subplots. By default, it plots **all** log files under:
+
+  `logs/deep/search/*.log`
+
+filtered to the default dataset size `N=1000000` (i.e., filenames containing
+`_N1000000_`). Each subplot contains **multiple curves** (one curve per log
+file, for the given range bucket).
 
 - X-axis: Recall
 - Y-axis: QPS
@@ -21,17 +26,24 @@ From the repo root:
 
   python3 analysis/plot_recall_qps.py
 
+This will plot all logs under `logs/deep/search/*.log`.
+
 Plot a specific log file (recommended for a single run):
 
   python3 analysis/plot_recall_qps.py \
     --log_file logs/deep/search/deep_N1000000_k16_efc150_efm300_alpha1.0_20251228_230148.log \
     --out analysis/recall_qps.png
 
-Or with a custom log folder and output path:
+Or plot all logs for another dataset by pointing to its search folder:
 
   python3 analysis/plot_recall_qps.py \
-    --log_root /path/to/DynamicSegmentGraph/logs \
+    --log_root logs/wikipedia/search \
     --out /path/to/out.png
+
+To plot a different dataset size (still within the same dataset folder), pass
+`--data_size`, e.g.:
+
+  python3 analysis/plot_recall_qps.py --data_size 100000
 
 Complexity
 ----------
@@ -47,8 +59,11 @@ import re
 import warnings
 from typing import Dict, List, Optional, Sequence, Tuple
 
-RECALL_X_MIN: float = 0.7
+RECALL_X_MIN: float = 0.8
 RECALL_X_MAX: float = 1.0
+DEFAULT_DATASET: str = "deep"
+DEFAULT_TASK_SUBDIR: str = "search"
+DEFAULT_DATA_SIZE: int = 1_000_000
 
 
 def _build_argparser() -> argparse.ArgumentParser:
@@ -69,13 +84,25 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--log_root",
         type=Path,
         default=None,
-        help="Root directory containing logs/ (default: <repo_root>/logs).",
+        help=(
+            "Directory to scan for logs when --log_file is not used "
+            "(default: <repo_root>/logs/deep/search)."
+        ),
     )
     p.add_argument(
         "--pattern",
         action="append",
         default=None,
         help="Glob pattern(s) under log_root (default: '**/*.log'). Can be passed multiple times.",
+    )
+    p.add_argument(
+        "--data_size",
+        type=int,
+        default=DEFAULT_DATA_SIZE,
+        help=(
+            "Dataset size filter. When scanning a dataset folder, only include log files "
+            "whose filename contains '_N{data_size}_'. (default: 1000000)"
+        ),
     )
     p.add_argument(
         "--include",
@@ -112,17 +139,6 @@ def _build_argparser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show the figure interactively (in addition to saving).",
     )
-    p.add_argument(
-        "--legend",
-        action="store_true",
-        help="Show a global legend (auto-disabled if too many curves).",
-    )
-    p.add_argument(
-        "--legend_max",
-        type=int,
-        default=12,
-        help="Max curves to show in legend before auto-disabling (default: 12).",
-    )
     return p
 
 
@@ -158,7 +174,11 @@ def main() -> int:
     args = _build_argparser().parse_args()
 
     repo_root = _repo_root_from_this_file()
-    log_root: Path = args.log_root if args.log_root is not None else (repo_root / "logs")
+    log_root: Path
+    if args.log_root is not None:
+        log_root = args.log_root
+    else:
+        log_root = repo_root / "logs" / DEFAULT_DATASET / DEFAULT_TASK_SUBDIR
     out_path: Path = args.out if args.out is not None else (repo_root / "analysis" / "recall_qps.png")
     patterns: List[str] = args.pattern if args.pattern is not None else ["**/*.log"]
 
@@ -186,11 +206,15 @@ def main() -> int:
     else:
         log_files = extractor.find_log_files(log_root, patterns=patterns)
         log_files = _filter_paths(log_files, log_root, include_re, exclude_re)
+        data_size_token = f"_N{int(args.data_size)}_"
+        log_files = [p for p in log_files if data_size_token in p.name]
         label_base = log_root
 
     if not log_files:
         print(f"[plot_recall_qps] No log files found under: {log_root}")
         print(f"[plot_recall_qps] Patterns: {patterns}")
+        if args.log_file is None:
+            print(f"[plot_recall_qps] data_size filter: {int(args.data_size)}")
         return 1
 
     # Import matplotlib only when we know we have something to plot.
@@ -285,26 +309,28 @@ def main() -> int:
 
     fig.suptitle(args.title)
 
-    want_legend = bool(args.legend)
-    if want_legend and len(label_to_handle) > args.legend_max:
-        print(
-            f"[plot_recall_qps] Too many curves ({len(label_to_handle)}) for legend; "
-            f"auto-disabling legend (legend_max={args.legend_max})."
-        )
-        want_legend = False
+    # Always show a legend so each curve can be mapped back to its log file.
+    if label_to_handle:
+        handles = list(label_to_handle.values())
+        legend_labels = list(label_to_handle.keys())
+        ncol = min(4, max(1, len(handles)))
+        # Reserve space for legend rows.
+        import math
 
-    if want_legend and label_to_handle:
+        rows = int(math.ceil(len(handles) / ncol))
+        legend_space = min(0.35, 0.08 + 0.05 * rows)
+        fig.tight_layout(rect=[0, legend_space, 1, 0.93])
         fig.legend(
-            list(label_to_handle.values()),
-            list(label_to_handle.keys()),
+            handles,
+            legend_labels,
             loc="lower center",
-            ncol=min(4, max(1, len(label_to_handle))),
-            fontsize="small",
+            bbox_to_anchor=(0.5, 0.01),
+            ncol=ncol,
+            fontsize="x-small",
             frameon=False,
         )
-        fig.subplots_adjust(bottom=0.18)
     else:
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0.0, 1, 0.93])
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
