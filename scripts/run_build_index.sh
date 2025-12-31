@@ -17,19 +17,69 @@ if [[ ! -x "${BIN}" ]]; then
   configure_and_build
 fi
 
-DATASET="deep"
-DATA_SIZE="100000"
-DATASET_PATH="${ROOT_DIR}/data/deep10M.bin"
-QUERY_PATH="${ROOT_DIR}/data/deep_query.bin"
-INDEX_PATH="${ROOT_DIR}/index/${DATASET}_N${DATA_SIZE}.index"
-INDEX_K="16"
-EF_CONSTRUCTION="100"
-EF_MAX="200"
-ALPHA="1.0"
+# DATASET="deep"
+DATASET="wikipedia"
+DATA_SIZE="1000000"
+
+# Dataset-specific paths
+declare -A DEFAULT_DATASET_PATHS=(
+  ["deep"]="${ROOT_DIR}/data/deep10M.bin"
+  ["wikipedia"]="${ROOT_DIR}/data/wiki_image_embedding.bin"
+  ["yt8m-video"]="${ROOT_DIR}/data/yt8m_sorted_by_timestamp_video_embedding_1M.bin"
+)
+declare -A DEFAULT_QUERY_PATHS=(
+  ["deep"]="${ROOT_DIR}/data/deep_query.bin"
+  ["wikipedia"]="${ROOT_DIR}/data/wiki_image_query.bin"
+  ["yt8m-video"]="${ROOT_DIR}/data/yt8m_video_query_10k.bin"
+)
+
+DATASET_PATH="${DEFAULT_DATASET_PATHS[${DATASET}]:-}"
+QUERY_PATH="${DEFAULT_QUERY_PATHS[${DATASET}]:-}"
+
+if [[ -z "${DATASET_PATH}" || -z "${QUERY_PATH}" ]]; then
+  echo "[DSG] Dataset or query path missing for ${DATASET}." >&2
+  exit 1
+fi
+
+# Dataset-specific parameters
+case "${DATASET}" in
+  "deep")
+    INDEX_K="16"
+    EF_CONSTRUCTION="150"
+    EF_MAX="300"
+    ALPHA="1.0"
+    ;;
+  "wikipedia"|"yt8m-video")
+    INDEX_K="32"
+    EF_CONSTRUCTION="150"
+    EF_MAX="500"
+    if [[ "${DATASET}" == "yt8m-video" ]]; then
+      ALPHA="1.3"
+    else
+      ALPHA="1.0"
+    fi
+    ;;
+  *)
+    echo "[DSG] Unknown dataset: ${DATASET}" >&2
+    exit 1
+    ;;
+esac
+
+INDEX_PATH="${ROOT_DIR}/index/${DATASET}/${DATASET}_N${DATA_SIZE}_k${INDEX_K}_efc${EF_CONSTRUCTION}_efm${EF_MAX}_alpha${ALPHA}.index"
 
 mkdir -p "$(dirname "${INDEX_PATH}")"
 
+# Create log directory and file
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+LOG_DIR="${ROOT_DIR}/logs/${DATASET}/build"
+mkdir -p "${LOG_DIR}"
+
+# Build log filename with parameters
+LOG_FILENAME="${DATASET}_N${DATA_SIZE}_k${INDEX_K}_efc${EF_CONSTRUCTION}_efm${EF_MAX}_alpha${ALPHA}_${TIMESTAMP}.log"
+LOG_PATH="${LOG_DIR}/${LOG_FILENAME}"
+
 echo "[DSG] Running build_index..."
+echo "[DSG] Logging output to ${LOG_PATH}"
 "${BIN}" \
   -dataset "${DATASET}" \
   -N "${DATA_SIZE}" \
@@ -39,5 +89,5 @@ echo "[DSG] Running build_index..."
   -k "${INDEX_K}" \
   -ef_construction "${EF_CONSTRUCTION}" \
   -ef_max "${EF_MAX}" \
-  -alpha "${ALPHA}"
+  -alpha "${ALPHA}" | tee "${LOG_PATH}"
 

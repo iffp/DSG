@@ -13,6 +13,7 @@ if [[ ! -x "${BIN}" ]]; then
 fi
 
 GROUND_DIR="${GROUND_DIR:-${ROOT_DIR}/groundtruth/static}"
+DATA_SIZE="1000000"
 declare -A DEFAULT_DATASET_PATHS=(
   ["deep"]="${ROOT_DIR}/data/deep10M.bin"
   ["wikipedia"]="${ROOT_DIR}/data/wiki_image_embedding.bin"
@@ -24,7 +25,7 @@ declare -A DEFAULT_QUERY_PATHS=(
   ["yt8m"]="${ROOT_DIR}/data/yt8m_video_query_10k.bin"
 )
 
-datasets=("yt8m") #"deep" "wikipedia" 
+datasets=("deep" "wikipedia" "yt8m") #
 
 for dataset in "${datasets[@]}"; do
   dataset_path="${DEFAULT_DATASET_PATHS[${dataset}]:-}"
@@ -38,7 +39,7 @@ for dataset in "${datasets[@]}"; do
   echo "Running groundtruth generation for dataset ${dataset}..."
   "${BIN}" \
     -dataset "${dataset}" \
-    -N 100000 \
+    -N "${DATA_SIZE}" \
     -dataset_path "${dataset_path}" \
     -query_path "${query_path}" \
     -groundtruth_root "${GROUND_DIR}"
