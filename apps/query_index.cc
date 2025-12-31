@@ -114,12 +114,12 @@ std::vector<unsigned> buildSearchEfSchedule(const QueryConfig &cfg) {
     }
 
     constexpr unsigned transition = 32;
-    constexpr unsigned sweep_max = 400;
+    constexpr unsigned sweep_max = 300;
     constexpr unsigned stride = 16;
 
     std::vector<unsigned> sweep;
 
-    for (unsigned ef = 1; ef < transition; ++ef) {
+    for (unsigned ef = 16; ef < transition; ef += 4) {
         sweep.push_back(ef);
     }
     for (unsigned ef = transition; ef <= sweep_max; ef += stride) {
@@ -158,9 +158,10 @@ int main(int argc, char **argv) {
         dsg::DynamicSegmentGraph index(&space, &data_wrapper);
         index.setQueryTopK(static_cast<unsigned>(cfg.query_k));
         index.load(cfg.index_path);
+        std::cout << "[DSG] Loaded index from " << cfg.index_path << std::endl;
+        index.getStats();
         logSimdInfo();
         const auto search_ef_schedule = buildSearchEfSchedule(cfg);
-        std::cout << "[DSG] Loaded index from " << cfg.index_path << std::endl;
         std::cout << "[DSG] Evaluating " << search_ef_schedule.size()
                   << " search_ef value(s)." << std::endl;
 
