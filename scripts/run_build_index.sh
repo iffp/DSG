@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 2025-12-02 Zhencan Peng: convenience wrapper to build and run build_index with default parameters.
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="/common/users/zp128/DynamicSegmentGraph"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
 BIN="${BUILD_DIR}/apps/build_index"
 
@@ -17,7 +17,7 @@ if [[ ! -x "${BIN}" ]]; then
   configure_and_build
 fi
 
-# DATASET="deep"
+# DATASET="deep" 
 DATASET="wikipedia"
 DATA_SIZE="1000000"
 
@@ -80,7 +80,7 @@ LOG_PATH="${LOG_DIR}/${LOG_FILENAME}"
 
 echo "[DSG] Running build_index..."
 echo "[DSG] Logging output to ${LOG_PATH}"
-"${BIN}" \
+/usr/bin/time -v "${BIN}" \
   -dataset "${DATASET}" \
   -N "${DATA_SIZE}" \
   -dataset_path "${DATASET_PATH}" \
