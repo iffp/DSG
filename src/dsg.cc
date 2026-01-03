@@ -746,18 +746,182 @@ void DynamicSegmentGraph::runKnnForLabel(
     size_t ef_limit,
     std::vector<std::pair<unsigned, DistType>> &candidates) {
     candidates.clear();
+
+    // This KNN is for a point that is already inside the temporary HNSW.
+    // We can skip the usual top-layer navigation and search only on level-0,
+    // using the point's own level-0 neighbors as the initial frontier.
+    //
+    // Important details for DSG build:
+    // - We mark `label` as visited so it never appears in results.
+    // - We seed `candidate_set` with `label`'s level-0 neighbors (NOT `label` itself).
+    // - We still keep "return all candidates ever in top_candidates" semantics by
+    //   storing candidates removed due to ef trimming and re-adding them at the end.
+
+    const hnswlib::tableint ep_id = static_cast<hnswlib::tableint>(label);
+
     const void *query = static_cast<const void *>(data_wrapper->nodes[label]);
-    // Use searchKnnCloserFirstReturnAll to get ALL candidates that were ever considered
-    // during the search, not just the top ef results. This provides more candidates
-    // for DFS compression, similar to compact_graph.h's searchBaseLayerLevel0.
-    const auto results = temp_hnsw_->searchKnnCloserFirstReturnAll(query, ef_limit);
-    candidates.reserve(results.size());
-    for (const auto &entry : results) {
-        const unsigned neighbor_label = static_cast<unsigned>(entry.second);
-        if (neighbor_label == label) {
+
+    hnswlib::VisitedList *vl = temp_hnsw_->visited_list_pool_->getFreeVisitedList();
+    hnswlib::vl_type *visited_array = vl->mass;
+    const hnswlib::vl_type visited_array_tag = vl->curV;
+
+    visited_array[ep_id] = visited_array_tag;  // exclude the query node itself
+
+    using InternalId = hnswlib::tableint;
+    using InternalCandidate = std::pair<DistType, InternalId>;
+    using CompareByFirst = typename HnswType::CompareByFirst;
+
+    // Reuse scratch buffers to avoid per-label allocations.
+    auto &top_candidates = knn_scratch_.top_candidates_heap;
+    auto &candidate_set = knn_scratch_.candidate_set_heap;
+    auto &removed_candidates = knn_scratch_.removed_candidates;
+    top_candidates.clear();
+    candidate_set.clear();
+    removed_candidates.clear();
+    if (top_candidates.capacity() < ef_limit) {
+        top_candidates.reserve(ef_limit);
+    }
+    if (candidate_set.capacity() < ef_limit) {
+        candidate_set.reserve(ef_limit);
+    }
+    if (removed_candidates.capacity() < ef_limit) {
+        removed_candidates.reserve(ef_limit);
+    }
+    const CompareByFirst heap_comp{};
+
+    auto heap_push = [&](std::vector<InternalCandidate> &heap,
+                         const InternalCandidate &value) {
+        heap.push_back(value);
+        std::push_heap(heap.begin(), heap.end(), heap_comp);
+    };
+    auto heap_pop = [&](std::vector<InternalCandidate> &heap) -> InternalCandidate {
+        std::pop_heap(heap.begin(), heap.end(), heap_comp);
+        InternalCandidate value = heap.back();
+        heap.pop_back();
+        return value;
+    };
+
+    DistType lower_bound = std::numeric_limits<DistType>::max();
+
+    auto distance_to = [&](InternalId internal_id) -> DistType {
+        return temp_hnsw_->fstdistfunc_(query,
+                                       temp_hnsw_->getDataByInternalId(internal_id),
+                                       temp_hnsw_->dist_func_param_);
+    };
+
+    // Seed the frontier with entry-point's level-0 neighbors.
+    int *seed_data = reinterpret_cast<int *>(temp_hnsw_->get_linklist0(ep_id));
+    const std::size_t seed_size =
+        static_cast<std::size_t>(temp_hnsw_->getListCount(reinterpret_cast<hnswlib::linklistsizeint *>(seed_data)));
+
+#ifdef USE_SSE
+    _mm_prefetch(reinterpret_cast<const char *>(visited_array + *(seed_data + 1)), _MM_HINT_T0);
+    _mm_prefetch(reinterpret_cast<const char *>(visited_array + *(seed_data + 1) + 64), _MM_HINT_T0);
+    _mm_prefetch(temp_hnsw_->data_level0_memory_ + (*(seed_data + 1)) * temp_hnsw_->size_data_per_element_ +
+                     temp_hnsw_->offsetData_,
+                 _MM_HINT_T0);
+    _mm_prefetch(reinterpret_cast<const char *>(seed_data + 2), _MM_HINT_T0);
+#endif
+
+    for (std::size_t j = 1; j <= seed_size; ++j) {
+#ifdef USE_SSE
+        _mm_prefetch(reinterpret_cast<const char *>(visited_array + *(seed_data + j + 1)), _MM_HINT_T0);
+        _mm_prefetch(temp_hnsw_->data_level0_memory_ + (*(seed_data + j + 1)) * temp_hnsw_->size_data_per_element_ +
+                         temp_hnsw_->offsetData_,
+                     _MM_HINT_T0);
+#endif
+        const InternalId cand_id = static_cast<InternalId>(*(seed_data + j));
+        if (visited_array[cand_id] == visited_array_tag) {
             continue;
         }
-        candidates.emplace_back(neighbor_label, entry.first);
+        visited_array[cand_id] = visited_array_tag;
+
+        const DistType dist = distance_to(cand_id);
+        heap_push(candidate_set, InternalCandidate{-dist, cand_id});
+#ifdef USE_SSE
+        _mm_prefetch(temp_hnsw_->data_level0_memory_ + candidate_set.front().second * temp_hnsw_->size_data_per_element_ +
+                         temp_hnsw_->offsetLevel0_,
+                     _MM_HINT_T0);
+#endif
+        heap_push(top_candidates, InternalCandidate{dist, cand_id});
+
+        if (top_candidates.size() > ef_limit) {
+            removed_candidates.emplace_back(heap_pop(top_candidates));
+        }
+        if (!top_candidates.empty()) {
+            lower_bound = top_candidates.front().first;
+        }
+    }
+
+    // Standard HNSW base-layer best-first traversal (level 0).
+    while (!candidate_set.empty()) {
+        const auto &current_node_pair = candidate_set.front();
+        const DistType candidate_dist = -current_node_pair.first;
+        if (candidate_dist > lower_bound) {
+            break;
+        }
+        const auto current_node_pair_value = heap_pop(candidate_set);
+
+        const InternalId current_node_id = current_node_pair_value.second;
+        int *data = reinterpret_cast<int *>(temp_hnsw_->get_linklist0(current_node_id));
+        const std::size_t size =
+            static_cast<std::size_t>(temp_hnsw_->getListCount(reinterpret_cast<hnswlib::linklistsizeint *>(data)));
+
+#ifdef USE_SSE
+        _mm_prefetch(reinterpret_cast<const char *>(visited_array + *(data + 1)), _MM_HINT_T0);
+        _mm_prefetch(reinterpret_cast<const char *>(visited_array + *(data + 1) + 64), _MM_HINT_T0);
+        _mm_prefetch(temp_hnsw_->data_level0_memory_ + (*(data + 1)) * temp_hnsw_->size_data_per_element_ +
+                         temp_hnsw_->offsetData_,
+                     _MM_HINT_T0);
+        _mm_prefetch(reinterpret_cast<const char *>(data + 2), _MM_HINT_T0);
+#endif
+
+        for (std::size_t j = 1; j <= size; ++j) {
+#ifdef USE_SSE
+            _mm_prefetch(reinterpret_cast<const char *>(visited_array + *(data + j + 1)), _MM_HINT_T0);
+            _mm_prefetch(temp_hnsw_->data_level0_memory_ + (*(data + j + 1)) * temp_hnsw_->size_data_per_element_ +
+                             temp_hnsw_->offsetData_,
+                         _MM_HINT_T0);
+#endif
+            const InternalId cand_id = static_cast<InternalId>(*(data + j));
+            if (visited_array[cand_id] == visited_array_tag) {
+                continue;
+            }
+            visited_array[cand_id] = visited_array_tag;
+
+            const DistType dist = distance_to(cand_id);
+            if (top_candidates.size() < ef_limit || lower_bound > dist) {
+                heap_push(candidate_set, InternalCandidate{-dist, cand_id});
+#ifdef USE_SSE
+                _mm_prefetch(temp_hnsw_->data_level0_memory_ +
+                                 candidate_set.front().second * temp_hnsw_->size_data_per_element_ +
+                                 temp_hnsw_->offsetLevel0_,
+                             _MM_HINT_T0);
+#endif
+                heap_push(top_candidates, InternalCandidate{dist, cand_id});
+
+                if (top_candidates.size() > ef_limit) {
+                    removed_candidates.emplace_back(heap_pop(top_candidates));
+                }
+                lower_bound = top_candidates.front().first;
+            }
+        }
+    }
+
+    // Re-add any candidates that were trimmed due to ef_limit (ReturnAll semantics).
+    for (const auto &removed : removed_candidates) {
+        heap_push(top_candidates, removed);
+    }
+
+    temp_hnsw_->visited_list_pool_->releaseVisitedList(vl);
+
+    candidates.reserve(top_candidates.size());
+    while (!top_candidates.empty()) {
+        const auto [dist, internal_id] = heap_pop(top_candidates);
+
+        const unsigned neighbor_label =
+            static_cast<unsigned>(temp_hnsw_->getExternalLabel(internal_id));
+        candidates.emplace_back(neighbor_label, dist);
     }
 }
 

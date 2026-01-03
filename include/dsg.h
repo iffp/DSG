@@ -102,6 +102,15 @@ public:
     std::size_t last_distance_eval_count() const noexcept { return last_distance_eval_count_; }
 
 private:
+    /// @brief Scratchpad buffers reused during per-node level-0 KNN candidate generation.
+    /// @details We implement a heap-based version of HNSW base-layer traversal in DSG
+    ///          and reuse these buffers across labels to avoid repeated allocations.
+    struct KnnScratch {
+        std::vector<std::pair<DistType, tableint>> top_candidates_heap;
+        std::vector<std::pair<DistType, tableint>> candidate_set_heap;
+        std::vector<std::pair<DistType, tableint>> removed_candidates;
+    };
+
     /// Allocate and build the temporary HNSW used for candidate generation.
     void initializeTemporaryHnsw(size_t ef_limit);
     /// Run an ef_max-sized search in the temporary HNSW for the target label.
@@ -142,6 +151,8 @@ private:
 
     /// Reusable buffers for DFS compression.
     DfsScratch dfs_scratch_;
+    /// Reusable buffers for base-layer KNN candidate generation during build.
+    KnnScratch knn_scratch_;
     /// Pool for visited lists
     hnswlib::VisitedListPool *visited_list_pool_ = nullptr;
     /// Last query hop count.
