@@ -34,6 +34,7 @@
 
 #include "base_hnsw/hnswlib.h"
 #include "data_wrapper.h"
+#include "reader.h"
 #include "dsg.h"
 
 // Global atomic to store peak thread count
@@ -105,12 +106,14 @@ int main(int argc, char **argv) {
         }
         std::cout << "[DSG] Data file contains " << data_size << " vectors" << std::endl;
 
-        // Load data using DSG's DataWrapper
-        // DataWrapper expects query_num, query_k, dataset_name, data_size
-        // We'll use dummy values for query parameters since we only need to load data
+        // Create DataWrapper with correct size
+        // NOTE: We don't use readData() because it requires BOTH database and query files.
+        // Instead, we load data directly using ReadBinaryVectors.
         DataWrapper data_wrapper(0, 10, "custom", data_size);
-        std::string empty_query_path = "";
-        data_wrapper.readData(data_path, empty_query_path);
+        
+        // Load database vectors directly (bypassing readData which requires query file)
+        ReadBinaryVectors(data_path, data_wrapper.nodes, data_size);
+        data_wrapper.data_dim = data_wrapper.nodes.dim();
         
         std::cout << "[DSG] Loaded " << data_wrapper.nodes.size() << " vectors of dimension " 
                   << data_wrapper.data_dim << std::endl;
