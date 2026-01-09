@@ -76,6 +76,7 @@ add_subdirectory(apps)
 
 option(BUILD_RANGE_BENCHMARKS "Build range benchmark executables under tests/" OFF)
 option(ENABLE_AVX512 "Enable AVX-512 instructions for the SIMD benchmark" OFF)
+option(BUILD_FANNS_WRAPPERS "Build FANNS benchmarking suite wrappers" ON)
 
 if(BUILD_RANGE_BENCHMARKS)
     add_executable(test_range_benchmark
@@ -94,4 +95,33 @@ if(BUILD_RANGE_BENCHMARKS)
         tests/test_l2_benchmark.cpp
     )
 
+endif()
+
+# FANNS benchmarking suite wrappers
+if(BUILD_FANNS_WRAPPERS)
+    # Conversion utilities
+    add_executable(fvecs_to_sorted_bin tests/fvecs_to_sorted_bin.cpp)
+    add_executable(fvecs_to_bin tests/fvecs_to_bin.cpp)
+    
+    # Index construction wrapper
+    add_executable(buildindex_wrapper tests/buildindex_wrapper.cpp)
+    target_include_directories(buildindex_wrapper PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/utils
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(buildindex_wrapper PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
+    dsg_apply_common_compile_options(buildindex_wrapper)
+    
+    # Search wrapper
+    add_executable(search_wrapper tests/search_wrapper.cpp)
+    target_include_directories(search_wrapper PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/utils
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(search_wrapper PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
+    dsg_apply_common_compile_options(search_wrapper)
 endif()
