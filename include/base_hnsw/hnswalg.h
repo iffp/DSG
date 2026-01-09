@@ -1440,7 +1440,6 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     std::priority_queue<std::pair<dist_t, labeltype >>
     searchKnnReturnAll(const void *query_data, size_t k) const {
         std::priority_queue<std::pair<dist_t, labeltype >> result;
-        if (cur_element_count == 0) return result;
 
         tableint currObj = enterpoint_node_;
         dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);

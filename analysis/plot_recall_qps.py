@@ -139,6 +139,32 @@ def _build_argparser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show the figure interactively (in addition to saving).",
     )
+    p.add_argument(
+        "--highlight",
+        type=str,
+        action="append",
+        default=None,
+        help=(
+            "Highlight curve(s) whose label/path contains this substring. "
+            "Can be passed multiple times. "
+            "Tip: pass a log filename like 'wikipedia_N100000_...alpha1.1.log'."
+        ),
+    )
+    p.add_argument(
+        "--highlight_regex",
+        action="store_true",
+        help="Treat --highlight values as regex patterns instead of substrings.",
+    )
+    p.add_argument(
+        "--legend_mode",
+        type=str,
+        choices=("all", "highlight", "none"),
+        default=None,
+        help=(
+            "Legend entries to show. Default: 'all' when not highlighting; "
+            "'highlight' when --highlight is set."
+        ),
+    )
     return p
 
 
@@ -168,6 +194,38 @@ def _filter_paths(
             continue
         kept.append(p)
     return kept
+
+
+def _matches_highlight(
+    label: str,
+    path: Path,
+    patterns: Sequence[str],
+    use_regex: bool,
+) -> bool:
+    if not patterns:
+        return False
+
+    haystacks = (label, path.name, str(path))
+    if use_regex:
+        for pat in patterns:
+            try:
+                cre = re.compile(pat)
+            except re.error:
+                # If the user provided an invalid regex, fall back to substring.
+                for h in haystacks:
+                    if pat in h:
+                        return True
+                continue
+            for h in haystacks:
+                if cre.search(h) is not None:
+                    return True
+        return False
+
+    for pat in patterns:
+        for h in haystacks:
+            if pat in h:
+                return True
+    return False
 
 
 def main() -> int:
@@ -234,6 +292,7 @@ def main() -> int:
 
     # Load all logs first.
     per_log_grouped: Dict[str, Dict[float, List[Tuple[float, float]]]] = {}
+    label_to_path: Dict[str, Path] = {}
     for log_path in log_files:
         if label_base is not None:
             label = str(log_path.relative_to(label_base))
@@ -247,6 +306,22 @@ def main() -> int:
             pts.sort(key=lambda x: x[0])  # sort by recall
             points_by_ratio[ratio] = pts
         per_log_grouped[label] = points_by_ratio
+        label_to_path[label] = log_path
+
+    highlight_patterns: List[str] = args.highlight if args.highlight is not None else []
+    highlight_map: Dict[str, bool] = {
+        lab: _matches_highlight(
+            label=lab,
+            path=label_to_path[lab],
+            patterns=highlight_patterns,
+            use_regex=bool(args.highlight_regex),
+        )
+        for lab in per_log_grouped.keys()
+    }
+    has_highlight = any(highlight_map.values())
+    legend_mode = args.legend_mode
+    if legend_mode is None:
+        legend_mode = "highlight" if has_highlight else "all"
 
     # Create a 2x4 grid (7 used, 1 hidden).
     fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(18, 8))
@@ -271,7 +346,14 @@ def main() -> int:
         ax.set_xlim(RECALL_X_MIN, RECALL_X_MAX)
 
         y_max: Optional[float] = None
-        for lab in labels:
+        # When highlighting, draw non-highlight curves first so highlights appear on top.
+        plot_labels = labels
+        if has_highlight:
+            plot_labels = [l for l in labels if not highlight_map.get(l, False)] + [
+                l for l in labels if highlight_map.get(l, False)
+            ]
+
+        for lab in plot_labels:
             pts = per_log_grouped[lab][ratio]
             if not pts:
                 continue
@@ -284,17 +366,53 @@ def main() -> int:
             if ys:
                 local_max = max(ys)
                 y_max = local_max if y_max is None else max(y_max, local_max)
+
+            is_hl = highlight_map.get(lab, False)
+            if has_highlight and not is_hl:
+                alpha = 0.12
+                linewidth = 0.8
+                markersize = 2.0
+                zorder = 1
+            else:
+                alpha = 1.0
+                linewidth = 1.2
+                markersize = 3.0
+                zorder = 2
+
+            # Highlight: draw an outline (black) and then the colored curve on top.
+            if is_hl:
+                ax.plot(
+                    xs,
+                    ys,
+                    marker=None,
+                    linewidth=3.2,
+                    color="black",
+                    alpha=1.0,
+                    zorder=4,
+                )
+                linewidth = 2.6
+                markersize = 4.0
+                alpha = 1.0
+                zorder = 5
+
             (line,) = ax.plot(
                 xs,
                 ys,
                 marker="o",
-                markersize=3.0,
-                linewidth=1.2,
+                markersize=markersize,
+                linewidth=linewidth,
+                alpha=alpha,
                 color=label_to_color[lab],
                 label=lab,
+                zorder=zorder,
             )
-            if lab not in label_to_handle:
-                label_to_handle[lab] = line
+
+            if legend_mode == "all":
+                if lab not in label_to_handle:
+                    label_to_handle[lab] = line
+            elif legend_mode == "highlight":
+                if is_hl and lab not in label_to_handle:
+                    label_to_handle[lab] = line
 
         # Important: do not lock y-limits before plotting; otherwise QPS curves can
         # be clipped (Matplotlib would keep the default [0, 1] range).

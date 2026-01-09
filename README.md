@@ -6,7 +6,7 @@ This repository hosts a rebuilt implementation of **Dynamic Segment Graph (DSG)*
 - Static build + load: done (DFS compression, CSR storage).
 - Insertion of new points: in progress.
 - Densification for small query ranges: planned / in progress.
-- Reducing the building time.
+- Reducing the building time: done.
 
 ## Quick Start
 ```bash
@@ -29,6 +29,15 @@ Entry points for indexing/querying live in `apps/` (`build_index.cc`, `query_ind
 | [DEEP](https://research.yandex.com/blog/benchmarks-for-billion-scale-similarity-search) | float | 96 | Synthetic |
 | [Youtube-Video](https://research.google.com/youtube8m/download.html) | float | 1024 | Video Release Time |
 | [WIT-Image](https://www.kaggle.com/c/wikipedia-image-caption/overview) | float | 2048 | Image Size |
+
+<!-- ## Recommended Hyperparameters (N = 1,000,000)
+The following settings are the current recommended defaults for a 1M dataset build for chasing best recall/QPS trade off.
+
+| Dataset (flag) | N | k(M) | ef_construction | ef_max | alpha |
+| :- | -: | -: | -: | -: | -: |
+| `deep` | 1,000,000 | 24 | 130 | 400 | 1.1 |
+| `wikipedia` | 1,000,000 | 32 | 151 | 500 | 1.0 |
+| `yt8m-video` | 1,000,000 | 32 | 151 | 500 | 1.3 | -->
 
 ## Notes
 - Targets C++17; uses STL and SIMD where helpful.

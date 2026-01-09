@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <unordered_set>
@@ -28,6 +29,28 @@ namespace dsg {
 namespace {
 using Clock = std::chrono::steady_clock;
 using Candidate = std::pair<DynamicSegmentGraph::DistType, unsigned>;
+
+static inline bool EnvVarEnabled(const char *name, bool default_value) noexcept {
+    const char *val = std::getenv(name);
+    if (val == nullptr) {
+        return default_value;
+    }
+    while (*val == ' ' || *val == '\t' || *val == '\n' || *val == '\r') {
+        ++val;
+    }
+    if (*val == '\0') {
+        return default_value;
+    }
+    // Keep parsing cheap. Prefer numeric toggles: 0/1.
+    const char c = *val;
+    if (c == '0' || c == 'f' || c == 'F' || c == 'n' || c == 'N') {
+        return false;
+    }
+    if (c == '1' || c == 't' || c == 'T' || c == 'y' || c == 'Y') {
+        return true;
+    }
+    return default_value;
+}
 
 // Temporary structure used only during build process for sorting/merging.
 struct TempEdge {
@@ -56,20 +79,8 @@ static inline std::uint64_t EdgeSupport(unsigned v,
                                        unsigned lu,
                                        unsigned rl,
                                        unsigned ru) noexcept {
-    if (ll > lu || rl > ru) {
-        return 0;
-    }
-    const unsigned l_hi = std::min(lu, v);
-    if (ll > l_hi) {
-        return 0;
-    }
-    const std::uint64_t count_L = static_cast<std::uint64_t>(l_hi - ll + 1);
-
-    const unsigned r_lo = std::max(rl, v);
-    if (r_lo > ru) {
-        return 0;
-    }
-    const std::uint64_t count_R = static_cast<std::uint64_t>(ru - r_lo + 1);
+    const std::uint64_t count_L = static_cast<std::uint64_t>(lu - ll + 1);
+    const std::uint64_t count_R = static_cast<std::uint64_t>(ru - rl + 1);
     return count_L * count_R;
 }
 
@@ -106,6 +117,15 @@ void DynamicSegmentGraph::build() {
 
     const auto build_start = Clock::now();
 
+    // Trigger: control whether to add reverse KNN candidates before compression.
+    // Default is OFF (enable by exporting: DSG_ADD_REVERSE_KNN_EDGES=1).
+    const bool add_reverse_knn_edges =
+        EnvVarEnabled("DSG_ADD_REVERSE_KNN_EDGES", false);
+    std::cout << "[DSG] Add reverse KNN edges: "
+              << (add_reverse_knn_edges ? "ON" : "OFF")
+              << " (env: DSG_ADD_REVERSE_KNN_EDGES)"
+              << std::endl;
+
     const std::size_t node_count = static_cast<std::size_t>(data_wrapper->data_size);
     // Use a temporary vector of vectors for building, merging, and sorting edges.
     std::vector<std::vector<TempEdge>> temp_adj(node_count);
@@ -138,14 +158,16 @@ void DynamicSegmentGraph::build() {
     }
 
     // add reverse edges so each point sees incoming sources
-    for (std::size_t label = 0; label < node_count; ++label) {
-        const auto &forward = all_candidates[label];
-        for (const auto &entry : forward) {
-            const unsigned neighbor = entry.first;
-            if (neighbor >= node_count) {
-                continue;
+    if (add_reverse_knn_edges) {
+        for (std::size_t label = 0; label < node_count; ++label) {
+            const auto &forward = all_candidates[label];
+            for (const auto &entry : forward) {
+                const unsigned neighbor = entry.first;
+                if (neighbor >= node_count) {
+                    continue;
+                }
+                all_candidates[neighbor].emplace_back(static_cast<unsigned>(label), entry.second);
             }
-            all_candidates[neighbor].emplace_back(static_cast<unsigned>(label), entry.second);
         }
     }
 
@@ -167,42 +189,50 @@ void DynamicSegmentGraph::build() {
         }
     };
 
+    // Local lambda to normalize candidate ordering before DFS compression.
+    // - With reverse-KNN augmentation enabled, we may introduce duplicate ids, so we
+    //   must sort by id + unique first, then sort by distance (nearest-first).
+    // - Without reverse-KNN augmentation, `runKnnForLabel()` already emits unique
+    //   candidates in nearest-first order (after heap extraction). No extra work needed.
+    auto prepare_candidates_for_dfs = [&](std::vector<std::pair<unsigned, DistType>> &candidates) {
+        if (add_reverse_knn_edges) {
+            std::sort(candidates.begin(), candidates.end(),
+                      [](const auto &lhs, const auto &rhs) {
+                          return lhs.first < rhs.first;
+                      });
+
+            candidates.erase(std::unique(candidates.begin(), candidates.end(),
+                                         [](const auto &lhs, const auto &rhs) {
+                                             return lhs.first == rhs.first;
+                                         }),
+                             candidates.end());
+
+            // Primary: Distance (asc), Secondary: ID (asc).
+            std::sort(candidates.begin(), candidates.end(),
+                      [](const auto &lhs, const auto &rhs) {
+                          if (std::abs(lhs.second - rhs.second) > 1e-6f) {
+                              return lhs.second < rhs.second;
+                          }
+                          return lhs.first < rhs.first;
+                      });
+            return;
+        }
+    };
+
     for (std::size_t label = 0; label < node_count; ++label) {
         auto &candidates = all_candidates[label];
 
-        auto t_merge_start = Clock::now();
-        // First sort by ID to remove duplicates efficiently
-        std::sort(candidates.begin(), candidates.end(),
-                  [](const auto &lhs, const auto &rhs) {
-                      return lhs.first < rhs.first;
-                  });
-        
-        // Remove duplicates in-place
-        candidates.erase(std::unique(candidates.begin(), candidates.end(),
-                                     [](const auto &lhs, const auto &rhs) {
-                                         return lhs.first == rhs.first;
-                                     }),
-                         candidates.end());
+        const auto t_prepare_start = Clock::now();
+        prepare_candidates_for_dfs(candidates);
+        const auto t_prepare_end = Clock::now();
 
-        // Now sort by distance (stable sort prefered for deterministic behavior if dists equal)
-        // Primary: Distance (asc), Secondary: ID (asc)
-        std::sort(candidates.begin(), candidates.end(),
-                  [](const auto &lhs, const auto &rhs) {
-                      if (std::abs(lhs.second - rhs.second) > 1e-6f) {
-                          return lhs.second < rhs.second;
-                      }
-                      return lhs.first < rhs.first;
-                  });
-
-        auto t_merge_end = Clock::now();
-
-        auto t_dfs_start = Clock::now();
+        const auto t_dfs_start = Clock::now();
         applyDfsCompression(static_cast<unsigned>(label), candidates);
-        auto t_dfs_end = Clock::now();
+        const auto t_dfs_end = Clock::now();
         store_edges_locally(static_cast<unsigned>(label));
-        auto t_store_end = Clock::now();
+        const auto t_store_end = Clock::now();
 
-        total_merge_time += std::chrono::duration<double>(t_merge_end - t_merge_start).count();
+        total_merge_time += std::chrono::duration<double>(t_prepare_end - t_prepare_start).count();
         total_dfs_time += std::chrono::duration<double>(t_dfs_end - t_dfs_start).count();
         total_store_time += std::chrono::duration<double>(t_store_end - t_dfs_end).count();
     }
@@ -275,6 +305,10 @@ void DynamicSegmentGraph::build() {
     // ---------------------------------------------------------------------
     const auto prune_start = Clock::now();
     const std::size_t protect_span = (node_count + 49) / 50; // ceil(0.02 * N) = ceil(N / 50)
+    // Distance-weighted pruning score to discourage far-in-label edges:
+    // score = support / |center_label - neighbor_label|.
+    std::cout << "[DSG] Build-time support prune: using distance-weighted score support/|nbr-center|"
+              << std::endl;
     std::size_t edges_before_prune = 0;
     std::size_t edges_after_prune = 0;
     std::size_t pruned_edges = 0;
@@ -302,19 +336,20 @@ void DynamicSegmentGraph::build() {
             const auto &edge = edges[i];
             const std::size_t neighbor = static_cast<std::size_t>(edge.external_id);
             const std::size_t diff =
-                neighbor > center_label ? (neighbor - center_label)
-                                        : (center_label - neighbor);
+                neighbor > center_label ? (neighbor - center_label + 1)
+                                        : (center_label - neighbor + 1);
             if (diff <= protect_span) {
                 supports_all[i] = kProtectedSentinel;
                 ++protected_edges;
                 continue;
             }
 
-            const std::uint64_t support = EdgeSupport(edge.external_id,
-                                                      edge.left_lower,
-                                                      edge.left_upper,
-                                                      edge.right_lower,
-                                                      edge.right_upper);
+            std::uint64_t support = EdgeSupport(edge.external_id,
+                                                edge.left_lower,
+                                                edge.left_upper,
+                                                edge.right_lower,
+                                                edge.right_upper);
+            support /= static_cast<std::uint64_t>(diff);
             supports_all[i] = support;
             prunable_supports.push_back(support);
         }
@@ -373,6 +408,7 @@ void DynamicSegmentGraph::build() {
               << " (" << prune_frac * 100.0 << "%), "
               << "protected_edges=" << protected_edges
               << " (|nbr-center| <= " << protect_span << "), "
+              << "score=support/|nbr-center|, "
               << "time=" << prune_time_s << " s" << std::endl;
 
     // Now flatten temp_adj into SoA members
@@ -915,13 +951,17 @@ void DynamicSegmentGraph::runKnnForLabel(
 
     temp_hnsw_->visited_list_pool_->releaseVisitedList(vl);
 
-    candidates.reserve(top_candidates.size());
+    // `top_candidates` is a max-heap by distance (farthest-first pops).
+    // Fill output from back to front so `candidates` becomes nearest-first.
+    const std::size_t out_size = top_candidates.size();
+    candidates.resize(out_size);
+    std::size_t out_pos = out_size;
     while (!top_candidates.empty()) {
         const auto [dist, internal_id] = heap_pop(top_candidates);
 
         const unsigned neighbor_label =
             static_cast<unsigned>(temp_hnsw_->getExternalLabel(internal_id));
-        candidates.emplace_back(neighbor_label, dist);
+        candidates[--out_pos] = {neighbor_label, dist};
     }
 }
 
