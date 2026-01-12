@@ -104,24 +104,24 @@ if(BUILD_FANNS_WRAPPERS)
     add_executable(fvecs_to_bin tests/fvecs_to_bin.cpp)
     
     # Index construction wrapper
-    add_executable(buildindex_wrapper tests/buildindex_wrapper.cpp)
-    target_include_directories(buildindex_wrapper PRIVATE
+    add_executable(index_construction tests/index_construction.cpp)
+    target_include_directories(index_construction PRIVATE
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/utils
         ${PROJECT_SOURCE_DIR}/src
         ${PROJECT_SOURCE_DIR}/tests
     )
-    target_link_libraries(buildindex_wrapper PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
-    dsg_apply_common_compile_options(buildindex_wrapper)
+    target_link_libraries(index_construction PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
+    dsg_apply_common_compile_options(index_construction)
     
     # Search wrapper
-    add_executable(search_wrapper tests/search_wrapper.cpp)
-    target_include_directories(search_wrapper PRIVATE
+    add_executable(query_execution tests/query_execution.cpp)
+    target_include_directories(query_execution PRIVATE
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/utils
         ${PROJECT_SOURCE_DIR}/src
         ${PROJECT_SOURCE_DIR}/tests
     )
-    target_link_libraries(search_wrapper PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
-    dsg_apply_common_compile_options(search_wrapper)
+    target_link_libraries(query_execution PRIVATE dsg_core UTIL OpenMP::OpenMP_CXX)
+    dsg_apply_common_compile_options(query_execution)
 endif()
