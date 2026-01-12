@@ -233,7 +233,7 @@ int main(int argc, char **argv) {
         // Print statistics in the expected format for the benchmarking suite
         std::cout << "Query execution completed." << std::endl;
         std::cout << "Query time (s): " << elapsed.count() << std::endl;
-        std::cout << "Peak thread count: " << peak_threads.load() << std::endl;
+        std::cout << "Peak thread count: " << (peak_threads.load() - 1) << std::endl; // Subtract 1 for the thread monitor
         std::cout << "QPS: " << qps << std::endl;
         std::cout << "Recall: " << avg_recall << std::endl;
         
